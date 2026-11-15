@@ -1,0 +1,27 @@
+# Backtest sur 2 ans : complète l'historique si besoin, puis rejoue les stratégies.
+# Lancement manuel (onglet Actions > backtest > Run workflow).
+name: backtest
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Historique (2 ans de bougies)
+        run: python -m bot.history
+      - name: Backtest
+        run: python -m bot.backtest
