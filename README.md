@@ -9,7 +9,8 @@ Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 |---|---|---|
 | `bot/collector.py` | bougies 1 h BTC/EUR → Neon, toutes les 15 min | GitHub Actions `collector` |
 | `bot/history.py` | 10 ans d'historique (archive officielle Kraken + API) | GitHub Actions `backtest` |
-| `bot/strategy.py` | A : moyennes mobiles 20/50 (1 h) · B : momentum 24 h · C : moyennes mobiles 20/50 (1 jour) · référence : buy & hold | — |
+| `bot/strategy.py` | A : moyennes mobiles 20/50 (1 h) · B : momentum 24 h · C : moyennes mobiles 20/50 (1 jour) · D : ensemble de tendances · référence : buy & hold | — |
+| `bot/research.py` | test de six stratégies candidates sur 10 ans (lecture seule) | GitHub Actions `research` |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
 | `bot/paper_trader.py` | simulation en direct sur 1 000 € fictifs, après chaque collecte | GitHub Actions `collector` |
@@ -57,10 +58,34 @@ mais rate l'essentiel des hausses).
 
 Les chiffres à jour sont dans la table `backtest_results` de Neon.
 
+## Recherche : six autres stratégies (10 ans, frais réels)
+
+Liste fixée et enregistrée avant le premier test (`bot/research.py`), paramètres
+d'usage tirés de la littérature, aucune optimisation. Lancé par GitHub Actions
+(`research`) le 2026-11-15, période 2016-11-17 → 2026-11-15, départ 1 000 €.
+
+| Stratégie | Capital final | Par an | Pire baisse | Sharpe | Ordres | Frais |
+|---|---|---|---|---|---|---|
+| Buy & hold | 83 433 € | +55,7 % | 82,9 % | 1,00 | 1 | 8 € |
+| Ensemble de tendances (moyennes 20/50/100/200 j) | 65 890 € | +52,1 % | 59,6 % | 1,17 | 712 | 22 999 € |
+| Filtre moyenne 200 jours | 50 824 € | +48,2 % | 66,6 % | 1,02 | 80 | 10 923 € |
+| Momentum 4 semaines (hebdo) | 41 856 € | +45,3 % | 79,2 % | 1,01 | 120 | 13 847 € |
+| Volatilité cible 50 % | 28 766 € | +40,0 % | 71,7 % | 0,93 | 169 | 1 938 € |
+| Moyennes 20/50 · 1 jour | 28 464 € | +39,8 % | 77,4 % | 0,93 | 80 | 9 157 € |
+| Tendances × volatilité cible | 26 201 € | +38,7 % | 50,0 % | 1,14 | 740 | 11 020 € |
+| Moitié BTC / moitié EUR | 18 278 € | +33,7 % | 51,3 % | 1,03 | 33 | 191 € |
+
+**Aucune ne rapporte plus que le buy & hold sur 10 ans**, et aucune ne le bat
+dans les deux moitiés de la période. Toutes réduisent la pire baisse. Sur les
+5 dernières années (BTC ×1,04), les règles de tendance font mieux que le buy &
+hold (×1,18 à ×1,50) ; sur les 5 premières (BTC ×80), elles font nettement moins
+bien. L'ensemble de tendances est le meilleur compromis mesuré ; il a été choisi
+après coup parmi six, donc son avantage est probablement surestimé.
+
 ## Étape 2 : simulation en direct
 
-Démarrée le 2026-11-15 à 03:00 UTC avec les trois stratégies et le buy & hold,
-chacun sur 1 000 € fictifs. Mêmes règles que le backtest : décision à la clôture
+Démarrée le 2026-11-15 à 03:00 UTC avec quatre stratégies (les trois premières
+et l'ensemble de tendances) et le buy & hold, chacun sur 1 000 € fictifs. Mêmes règles que le backtest : décision à la clôture
 d'une bougie 1 h, exécution à l'ouverture de la suivante, frais preneur Kraken,
 glissement de 0,05 %. Le calcul est rejoué à chaque passage : pas de doublon, et
 une panne se rattrape toute seule. Tables : `signals`, `trades`, `equity`

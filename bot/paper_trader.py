@@ -17,25 +17,46 @@ from .portfolio import TieredFee
 HOUR = 3600
 
 
-def signals_for(candles, start_index, target, trades):
+def weights_at_close(candles, start_index, trades, curve):
+    """Part de BTC du portefeuille à la clôture de chaque bougie (entre 0 et 1)."""
+    qty_change = {}
+    for t in trades:
+        qty_change[t["ts"]] = qty_change.get(t["ts"], 0.0) + (t["qty"] if t["side"] == "buy" else -t["qty"])
+    btc, out = 0.0, []
+    for k, i in enumerate(range(start_index, len(candles))):
+        candle = candles[i]
+        btc = max(0.0, btc + qty_change.get(candle["ts"], 0.0))   # ordre exécuté à l'ouverture
+        value = curve[k + 1][1]                                    # valeur à la clôture de cette bougie
+        out.append(btc * candle["close"] / value if value > 0 else 0.0)
+    return out
+
+
+def signals_for(candles, start_index, target, trades, curve):
     """Signal émis à la clôture de chaque bougie : ACHETER / VENDRE / RIEN.
 
-    Le signal compare ce que veut la stratégie à ce que détient le portefeuille.
-    Il est daté de la clôture (= heure d'ouverture de la bougie où il sera exécuté).
+    Le signal compare la part de BTC voulue par la stratégie à celle du
+    portefeuille (écart de plus de 10 points). Il est daté de la clôture
+    (= heure d'ouverture de la bougie où l'ordre sera exécuté).
     """
-    side_at = {t["ts"]: t["side"] for t in trades}
-    in_btc, out = False, []
-    for i in range(start_index, len(candles)):
-        candle = candles[i]
-        if candle["ts"] in side_at:                      # ordre exécuté à l'ouverture
-            in_btc = side_at[candle["ts"]] == "buy"
-        wanted = target[i]
-        if wanted is None or wanted == in_btc:
-            signal = "HOLD"
-        else:
-            signal = "BUY" if wanted else "SELL"
+    weights = weights_at_close(candles, start_index, trades, curve)
+    out = []
+    for k, i in enumerate(range(start_index, len(candles))):
+        candle, wanted = candles[i], target[i]
+        signal = "HOLD"
+        if wanted is not None:
+            gap = float(wanted) - weights[k]
+            if gap > config.REBALANCE_BAND:
+                signal = "BUY"
+            elif gap < -config.REBALANCE_BAND:
+                signal = "SELL"
         out.append({"ts": candle["ts"] + HOUR, "signal": signal, "price": candle["close"]})
     return out
+
+
+def position_label(weight):
+    """« BTC », « EUR » ou par exemple « 75 % BTC » pour une exposition partielle."""
+    percent = round(weight * 100)
+    return "EUR" if percent <= 0 else "BTC" if percent >= 100 else f"{percent} % BTC"
 
 
 def build_statements(results, candles, start_ts, done_ts, now_iso):
@@ -45,6 +66,7 @@ def build_statements(results, candles, start_ts, done_ts, now_iso):
     statements = []
     for name, res in results.items():
         s = res["stats"]
+        weights = weights_at_close(candles, start_index, res["trades"], res["curve"])
         statements.append((
             """INSERT INTO paper_results (strategy, run_at, start_ts, end_ts, start_eur, final_eur,
                  return_pct, n_trades, n_round_trips, win_rate_pct, fees_eur, max_drawdown_pct,
@@ -58,7 +80,7 @@ def build_statements(results, candles, start_ts, done_ts, now_iso):
                  beats_buy_hold = EXCLUDED.beats_buy_hold, position = EXCLUDED.position""",
             [name, now_iso, start_ts, end_ts, config.START_CAPITAL_EUR, s["final_eur"],
              s["return_pct"], s["n_trades"], s["n_round_trips"], s["win_rate_pct"], s["fees_eur"],
-             s["max_drawdown_pct"], s["beats_buy_hold"], "BTC" if res["in_btc"] else "EUR"]))
+             s["max_drawdown_pct"], s["beats_buy_hold"], position_label(weights[-1])]))
         statements.append((
             """INSERT INTO trades (strategy, ts, side, price, qty, fee, mode)
                SELECT $1, to_timestamp(t.ts), t.side, t.price, t.qty, t.fee, 'paper'
@@ -74,8 +96,8 @@ def build_statements(results, candles, start_ts, done_ts, now_iso):
                ON CONFLICT DO NOTHING""",
             [name, json.dumps(equity)]))
         if name != "buy_and_hold":                       # le buy & hold n'émet pas de signal
-            signals = [x for x in signals_for(candles, start_index, res["target"], res["trades"])
-                       if x["ts"] > done_ts]
+            signals = [x for x in signals_for(candles, start_index, res["target"], res["trades"],
+                                              res["curve"]) if x["ts"] > done_ts]
             statements.append((
                 """INSERT INTO signals (strategy, ts, signal, price)
                    SELECT $1, to_timestamp(x.ts), x.signal, x.price
@@ -108,7 +130,7 @@ def main():
     for name, res in results.items():
         s = res["stats"]
         print(f"  {name:<23}{s['final_eur']:>10.2f} EUR  {s['n_trades']:>3} ordre(s)  "
-              f"position : {'BTC' if res['in_btc'] else 'EUR'}")
+              f"dernier cours : {candles[-1]['close']:.1f}")
 
 
 if __name__ == "__main__":

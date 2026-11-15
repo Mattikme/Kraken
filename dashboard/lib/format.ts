@@ -52,13 +52,14 @@ export function tone(v: number | null | undefined): string {
 }
 
 export const STRATEGY_LABELS: Record<string, string> = {
+  trend_ensemble: "Ensemble de tendances",
   sma_cross_daily_20_50: "Moyennes 20/50 · 1 jour",
   sma_cross_20_50: "Moyennes 20/50 · 1 h",
   momentum_24h: "Momentum 24 h",
   buy_and_hold: "Buy & hold",
 };
 
-export const STRATEGY_ORDER = ["sma_cross_daily_20_50", "sma_cross_20_50", "momentum_24h"];
+export const STRATEGY_ORDER = ["trend_ensemble", "sma_cross_daily_20_50", "sma_cross_20_50", "momentum_24h"];
 
 export function label(strategy: string): string {
   return STRATEGY_LABELS[strategy] ?? strategy;

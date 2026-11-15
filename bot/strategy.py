@@ -73,6 +73,39 @@ def daily_sma_cross(candles, fast=config.DAILY_SMA_FAST, slow=config.DAILY_SMA_S
     return to_hourly(sma_cross(closes, fast, slow), day_of)
 
 
+def sma(values, n):
+    """Moyenne mobile simple ; None tant qu'il n'y a pas n valeurs."""
+    out, total = [None] * len(values), 0.0
+    for i, v in enumerate(values):
+        total += v
+        if i >= n:
+            total -= values[i - n]
+        if i >= n - 1:
+            out[i] = total / n
+    return out
+
+
+def trend_ensemble_daily(closes, windows=config.ENSEMBLE_SMA_DAYS):
+    """Part de BTC visée chaque jour : proportion des moyennes mobiles (20, 50,
+    100 et 200 jours) que le cours dépasse, soit 0, 25, 50, 75 ou 100 %."""
+    averages = [sma(closes, n) for n in windows]
+    out = []
+    for i, close in enumerate(closes):
+        if any(a[i] is None for a in averages):
+            out.append(None)
+        else:
+            out.append(sum(close > a[i] for a in averages) / len(averages))
+    return out
+
+
+def trend_ensemble(candles):
+    """Stratégie D : ensemble de tendances, décidé une fois par jour. Plus le
+    cours est au-dessus de ses moyennes, plus on détient de BTC. Évite de
+    parier sur une seule durée de tendance."""
+    _, closes, day_of = daily_closes(candles)
+    return to_hourly(trend_ensemble_daily(closes), day_of)
+
+
 def buy_and_hold(closes):
     """Référence : toujours en BTC."""
     return [True] * len(closes)
@@ -99,5 +132,6 @@ STRATEGIES = {
     "sma_cross_daily_20_50": (daily_sma_cross,
                               {"fast": config.DAILY_SMA_FAST, "slow": config.DAILY_SMA_SLOW,
                                "candle": "1d"}),
+    "trend_ensemble": (trend_ensemble, {"averages": list(config.ENSEMBLE_SMA_DAYS), "candle": "1d"}),
     "buy_and_hold": (lambda candles: buy_and_hold(_closes(candles)), {}),
 }

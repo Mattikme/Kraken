@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS paper_results (
   fees_eur         numeric     NOT NULL,
   max_drawdown_pct numeric     NOT NULL,
   beats_buy_hold   boolean,                -- NULL pour le buy & hold lui-même
-  position         text        NOT NULL CHECK (position IN ('BTC', 'EUR'))
+  position         text        NOT NULL   -- 'BTC', 'EUR' ou par exemple '75 % BTC'
 );
 
 -- Résumé du dernier backtest (une ligne par stratégie, hypothèse de frais et durée).

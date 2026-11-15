@@ -127,7 +127,7 @@ def test_buy_and_hold_sert_de_reference():
     bh = results["buy_and_hold"]
     assert bh["stats"]["n_trades"] == 1 and bh["stats"]["beats_buy_hold"] is None
     assert bh["stats"]["final_eur"] == pytest.approx(1000 / 1.008 / (100 * 1.0005) * 200)
-    for name in ("sma_cross_20_50", "momentum_24h", "sma_cross_daily_20_50"):
+    for name in ("sma_cross_20_50", "momentum_24h", "sma_cross_daily_20_50", "trend_ensemble"):
         assert results[name]["stats"]["beats_buy_hold"] in (True, False)
         assert results[name]["curve"][0] == (60 * 3600, 1000.0)   # même départ pour toutes
 
@@ -160,8 +160,8 @@ def test_signaux_dates_a_la_cloture_et_coherents_avec_les_ordres():
     from bot import paper_trader
     candles = _candles([(100, 100)] * 5)
     target = [None, True, True, False, False]
-    pf, _ = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
-    signals = paper_trader.signals_for(candles, 1, target, pf.trades)
+    pf, curve = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
+    signals = paper_trader.signals_for(candles, 1, target, pf.trades, curve)
     assert [s["signal"] for s in signals] == ["BUY", "HOLD", "SELL", "HOLD"]
     assert signals[0]["ts"] == 2 * 3600 == pf.trades[0]["ts"]    # signal 02:00 -> achat 02:00
     assert signals[2]["ts"] == 4 * 3600 == pf.trades[1]["ts"]    # signal 04:00 -> vente 04:00
@@ -178,7 +178,7 @@ def test_simulation_rejouable_sans_doublon():
     equity = [json.loads(p[1]) for sql, p in statements if "INSERT INTO equity" in sql]
     assert all(len(rows) == 1 and rows[0]["ts"] == done_ts + 3600 for rows in equity)
     assert all("ON CONFLICT" in sql for sql, _ in statements)    # aucune écriture en double
-    assert sum("INSERT INTO signals" in sql for sql, _ in statements) == 3   # pas pour le buy & hold
+    assert sum("INSERT INTO signals" in sql for sql, _ in statements) == 4   # pas pour le buy & hold
 
 
 # ---------- recherche : exposition partielle et stratégies candidates ----------
@@ -230,3 +230,16 @@ def test_regles_candidates_sur_des_cas_simples():
     assert research.vol_target(days[:60], calm)[-1] == 1.0                # marché calme : 100 %
     wild = [100.0 * (1.2 if d % 2 else 1.0) for d in range(60)]
     assert research.vol_target(days[:60], wild)[-1] < 0.2                 # marché agité : peu de BTC
+
+
+def test_signaux_et_position_pour_une_exposition_partielle():
+    from bot import paper_trader
+    candles = _candles([(100, 100)] * 6)
+    target = [None, 0.5, 0.5, 0.75, 0.0, 0.0]
+    pf, curve = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
+    signals = paper_trader.signals_for(candles, 1, target, pf.trades, curve)
+    # clôtures 1..5 : acheter (0 -> 50 %), rien, acheter (50 -> 75 %), vendre (75 -> 0 %), rien
+    assert [s["signal"] for s in signals] == ["BUY", "HOLD", "BUY", "SELL", "HOLD"]
+    weights = paper_trader.weights_at_close(candles, 1, pf.trades, curve)
+    assert weights == pytest.approx([0.0, 0.5, 0.5, 0.75, 0.0], abs=0.002)
+    assert [paper_trader.position_label(w) for w in (0.0, 0.25, 0.752, 1.0)] == ["EUR", "25 % BTC", "75 % BTC", "BTC"]

@@ -44,13 +44,16 @@ MOMENTUM_EXIT = 0.0      # stratégie B : on vend si rendement 24 h < 0 %
 DAILY_SMA_FAST = 20      # jours
 DAILY_SMA_SLOW = 50      # jours
 
+# Stratégie D : ensemble de tendances (retenue après la phase de recherche).
+# Part de BTC = proportion de ces moyennes journalières que le cours dépasse.
+ENSEMBLE_SMA_DAYS = (20, 50, 100, 200)
+
 # Backtest : période jugée (2 ans) et période de contrôle plus longue (10 ans),
 # qui couvre plusieurs marchés haussiers et baissiers.
 BACKTEST_DAYS = 730
 ROBUSTNESS_DAYS = 3650
-WARMUP_DAYS = 70         # historique nécessaire avant le départ (moyenne 50 jours)
-RESEARCH_WARMUP_DAYS = 220   # les stratégies de recherche utilisent une moyenne 200 jours
-HISTORY_DAYS = ROBUSTNESS_DAYS + RESEARCH_WARMUP_DAYS + 10
+WARMUP_DAYS = 220        # historique nécessaire avant le départ (moyenne 200 jours)
+HISTORY_DAYS = ROBUSTNESS_DAYS + WARMUP_DAYS + 10
 
 # Stratégies à exposition partielle : on ne rééquilibre que si la part de BTC
 # s'écarte de plus de 10 points de la cible (évite de payer des frais pour rien).

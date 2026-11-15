@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 
 from . import backtest, config, db
 from .portfolio import TieredFee
-from .strategy import buy_and_hold, daily_closes, daily_sma_cross, to_hourly
+from .strategy import (buy_and_hold, daily_closes, daily_sma_cross, sma, to_hourly,
+                       trend_ensemble_daily)
 
 DAY = 86400
 SUNDAY = 6
@@ -25,18 +26,6 @@ SUNDAY = 6
 def weekday(day_number):
     """0 = lundi ... 6 = dimanche (le jour 0, 1er janvier 1970, était un jeudi)."""
     return (day_number + 3) % 7
-
-
-def sma(values, n):
-    """Moyenne mobile simple ; None tant qu'il n'y a pas n valeurs."""
-    out, total = [None] * len(values), 0.0
-    for i, v in enumerate(values):
-        total += v
-        if i >= n:
-            total -= values[i - n]
-        if i >= n - 1:
-            out[i] = total / n
-    return out
 
 
 def realized_vol(closes, n=30):
@@ -75,14 +64,7 @@ def trend_ensemble(days, closes):
     """Ensemble de tendances : part de BTC = proportion des moyennes 20, 50, 100
     et 200 jours que le cours dépasse (0, 25, 50, 75 ou 100 %). Évite de parier
     sur une seule durée. (Detzel et al. 2021 testent ces durées sur le bitcoin.)"""
-    averages = [sma(closes, n) for n in (20, 50, 100, 200)]
-    out = []
-    for i, close in enumerate(closes):
-        if averages[-1][i] is None:
-            out.append(None)
-        else:
-            out.append(sum(close > a[i] for a in averages) / len(averages))
-    return out
+    return trend_ensemble_daily(closes)
 
 
 def fixed_mix_50(days, closes):
@@ -114,7 +96,7 @@ def daily(fn):
 
 
 CANDIDATES = {
-    "buy_and_hold": lambda candles: buy_and_hold(candles),
+    "buy_and_hold": lambda candles: buy_and_hold([c["close"] for c in candles]),
     "sma_cross_daily_20_50": daily_sma_cross,          # déjà testée, pour comparaison
     "trend_sma200": daily(trend_sma200),
     "tsmom_4w": daily(tsmom_4w),
@@ -196,7 +178,7 @@ def main():
     iso = lambda ts: datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
     for period_days in (config.ROBUSTNESS_DAYS, config.BACKTEST_DAYS):
         start_ts = end_ts - period_days * DAY
-        warmup_start = start_ts - config.RESEARCH_WARMUP_DAYS * DAY
+        warmup_start = start_ts - config.WARMUP_DAYS * DAY
         candles = db.load_candles(config.PAIR, warmup_start, end_ts)
         if not candles or candles[0]["ts"] > warmup_start + DAY:
             raise SystemExit("Historique insuffisant : lance d'abord bot.history.")
