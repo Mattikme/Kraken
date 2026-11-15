@@ -3,7 +3,7 @@ name: collector
 
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"   # toutes les 15 min, hors des minutes rondes (surchargées chez GitHub)
+    - cron: "8,23,38,53 * * * *"   # toutes les 15 min, hors des minutes rondes (surchargées chez GitHub)
   workflow_dispatch:
 
 permissions:
