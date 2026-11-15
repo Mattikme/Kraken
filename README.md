@@ -8,8 +8,8 @@ Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 | Élément | Rôle | Où |
 |---|---|---|
 | `bot/collector.py` | bougies 1 h BTC/EUR → Neon, toutes les 15 min | GitHub Actions `collector` |
-| `bot/history.py` | 2 ans d'historique (archive officielle Kraken + API) | GitHub Actions `backtest` |
-| `bot/strategy.py` | A : moyennes mobiles 20/50 · B : momentum 24 h · référence : buy & hold | — |
+| `bot/history.py` | 10 ans d'historique (archive officielle Kraken + API) | GitHub Actions `backtest` |
+| `bot/strategy.py` | A : moyennes mobiles 20/50 (1 h) · B : momentum 24 h · C : moyennes mobiles 20/50 (1 jour) · référence : buy & hold | — |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
 | `schema.sql` | tables Neon | — |
@@ -26,15 +26,33 @@ Seul secret nécessaire : `DATABASE_URL` (chaîne de connexion Neon) dans
 - Décision à la clôture d'une bougie, exécution à l'ouverture de la suivante.
 - Paramètres fixés à l'avance, jamais ajustés après coup.
 
-## Résultat de l'étape 1 (2024-11-15 → 2026-11-15)
+## Résultat de l'étape 1
 
-| Stratégie | Capital final | Ordres | Frais payés | Drawdown max | Bat le buy & hold ? |
-|---|---|---|---|---|---|
-| Moyennes mobiles 20/50 | 47,81 € | 402 | 727,61 € | 95,4 % | non |
-| Momentum 24 h | 73,79 € | 374 | 721,71 € | 92,7 % | non |
-| Buy & hold | 676,42 € | 1 | 7,94 € | 52,4 % | — |
+Backtest lancé par GitHub Actions le 2026-11-15, frais Kraken réels.
 
-**Verdict : aucune stratégie ne bat le buy & hold après frais. Arrêt, comme prévu.**
+**2 ans (2024-11-15 → 2026-11-15) — période jugée**
+
+| Stratégie | Capital final | Ordres | Taux de réussite | Frais payés | Drawdown max | Bat le buy & hold ? |
+|---|---|---|---|---|---|---|
+| Moyennes mobiles 20/50, 1 h | 48,14 € | 402 | 17,9 % | 732,43 € | 95,4 % | non |
+| Momentum 24 h | 73,79 € | 374 | 19,3 % | 721,71 € | 92,7 % | non |
+| Moyennes mobiles 20/50, 1 jour | 734,55 € | 20 | 40,0 % | 143,80 € | 43,9 % | oui, de 37 € |
+| Buy & hold | 697,18 € | 1 | — | 7,94 € | 52,4 % | — |
+
+**10 ans (2016-11-17 → 2026-11-15) — contrôle**
+
+| Stratégie | Capital final | Ordres | Drawdown max | Bat le buy & hold ? |
+|---|---|---|---|---|
+| Moyennes mobiles 20/50, 1 jour | 28 464 € | 80 | 77,4 % | non |
+| Buy & hold | 83 433 € | 1 | 82,9 % | — |
+
+**Verdict : pas d'avantage démontré.** Les stratégies horaires sont détruites par
+les frais. La stratégie journalière passe le critère des 2 ans, mais de justesse
+et par hasard de calendrier : elle n'a été devant le buy & hold que 371 jours
+sur 731, elle était encore derrière le 10 novembre 2026, et sur 10 ans elle ne
+garde qu'un tiers du gain du buy & hold (elle perd moins les années de baisse,
+mais rate l'essentiel des hausses).
+
 Les chiffres à jour sont dans la table `backtest_results` de Neon.
 
 ## Tests

@@ -1,4 +1,4 @@
-# Backtest sur 2 ans : complète l'historique si besoin, puis rejoue les stratégies.
+# Backtest (2 ans jugés, 10 ans de contrôle) : complète l'historique si besoin, puis rejoue les stratégies.
 # Lancement manuel (onglet Actions > backtest > Run workflow).
 name: backtest
 
@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
-      - name: Historique (2 ans de bougies)
+      - name: Historique (10 ans de bougies)
         run: python -m bot.history
       - name: Backtest
         run: python -m bot.backtest
