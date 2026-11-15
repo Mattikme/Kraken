@@ -12,6 +12,8 @@ Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 | `bot/strategy.py` | A : moyennes mobiles 20/50 (1 h) · B : momentum 24 h · C : moyennes mobiles 20/50 (1 jour) · référence : buy & hold | — |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
+| `bot/paper_trader.py` | simulation en direct sur 1 000 € fictifs, après chaque collecte | GitHub Actions `collector` |
+| `dashboard/` | tableau de bord (Next.js) qui lit Neon | Vercel |
 | `schema.sql` | tables Neon | — |
 
 Seul secret nécessaire : `DATABASE_URL` (chaîne de connexion Neon) dans
@@ -54,6 +56,24 @@ garde qu'un tiers du gain du buy & hold (elle perd moins les années de baisse,
 mais rate l'essentiel des hausses).
 
 Les chiffres à jour sont dans la table `backtest_results` de Neon.
+
+## Étape 2 : simulation en direct
+
+Démarrée le 2026-11-15 à 03:00 UTC avec les trois stratégies et le buy & hold,
+chacun sur 1 000 € fictifs. Mêmes règles que le backtest : décision à la clôture
+d'une bougie 1 h, exécution à l'ouverture de la suivante, frais preneur Kraken,
+glissement de 0,05 %. Le calcul est rejoué à chaque passage : pas de doublon, et
+une panne se rattrape toute seule. Tables : `signals`, `trades`, `equity`
+(mode `paper`) et `paper_results`.
+
+## Tableau de bord (Vercel)
+
+1. Sur <https://vercel.com/new>, importer le dépôt `Mattikme/Kraken`.
+2. **Root Directory** : `dashboard`.
+3. **Environment Variables** : `DATABASE_URL` = chaîne de connexion Neon.
+4. Deploy.
+
+Le tableau de bord ne fait que lire Neon ; une donnée absente s'affiche « — ».
 
 ## Tests
 
