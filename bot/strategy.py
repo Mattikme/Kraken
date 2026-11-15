@@ -41,6 +41,26 @@ def momentum(closes, hours=config.MOMENTUM_HOURS,
     return target
 
 
+def daily_sma_cross(candles, fast=config.DAILY_SMA_FAST, slow=config.DAILY_SMA_SLOW):
+    """Stratégie C : croisement de moyennes mobiles sur des bougies d'un jour (UTC).
+
+    Les bougies 1 h sont regroupées par jour. La décision d'un jour n'est
+    utilisée qu'à partir du jour SUIVANT (quand sa clôture est définitive) :
+    l'ordre part donc peu après minuit UTC, au plus une fois par jour.
+    """
+    day_closes, day_of, current = [], [], None
+    for c in candles:
+        day = c["ts"] // 86400
+        if day != current:
+            day_closes.append(c["close"])
+            current = day
+        else:
+            day_closes[-1] = c["close"]          # dernière clôture connue du jour
+        day_of.append(len(day_closes) - 1)
+    daily = sma_cross(day_closes, fast, slow)
+    return [daily[d - 1] if d > 0 else None for d in day_of]
+
+
 def buy_and_hold(closes):
     """Référence : toujours en BTC."""
     return [True] * len(closes)
@@ -53,10 +73,19 @@ def signal(previous_target, target):
     return "BUY" if target else "SELL"
 
 
-# Nom en base -> (fonction, paramètres affichés)
+def _closes(candles):
+    return [c["close"] for c in candles]
+
+
+# Nom en base -> (fonction recevant les bougies 1 h, paramètres affichés)
 STRATEGIES = {
-    "sma_cross_20_50": (sma_cross, {"fast": config.SMA_FAST, "slow": config.SMA_SLOW}),
-    "momentum_24h": (momentum, {"hours": config.MOMENTUM_HOURS,
-                                "enter": config.MOMENTUM_ENTER, "exit": config.MOMENTUM_EXIT}),
-    "buy_and_hold": (buy_and_hold, {}),
+    "sma_cross_20_50": (lambda candles: sma_cross(_closes(candles)),
+                        {"fast": config.SMA_FAST, "slow": config.SMA_SLOW, "candle": "1h"}),
+    "momentum_24h": (lambda candles: momentum(_closes(candles)),
+                     {"hours": config.MOMENTUM_HOURS, "enter": config.MOMENTUM_ENTER,
+                      "exit": config.MOMENTUM_EXIT, "candle": "1h"}),
+    "sma_cross_daily_20_50": (daily_sma_cross,
+                              {"fast": config.DAILY_SMA_FAST, "slow": config.DAILY_SMA_SLOW,
+                               "candle": "1d"}),
+    "buy_and_hold": (lambda candles: buy_and_hold(_closes(candles)), {}),
 }

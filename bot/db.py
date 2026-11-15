@@ -70,16 +70,26 @@ def upsert_candles(pair, candles, chunk=5000):
         query(sql, [pair, json.dumps(candles[i:i + chunk])])
 
 
-def load_candles(pair, since_ts=0):
-    """Bougies triées par date, valeurs numériques (ts en secondes UTC)."""
-    rows = query(
-        """SELECT extract(epoch FROM ts)::bigint AS ts, open::float8 AS open,
-                  high::float8 AS high, low::float8 AS low, close::float8 AS close,
-                  volume::float8 AS volume
-           FROM candles WHERE pair = $1 AND ts >= to_timestamp($2) ORDER BY ts""",
-        [pair, since_ts],
-    )
-    return [{k: (int(v) if k == "ts" else float(v)) for k, v in r.items()} for r in rows]
+def load_candles(pair, since_ts, until_ts, page=20000):
+    """Bougies de [since_ts, until_ts) triées par date (ts en secondes UTC).
+
+    Lecture par pages pour rester sous la taille maximale d'une réponse Neon.
+    """
+    candles, cursor = [], since_ts
+    while True:
+        rows = query(
+            """SELECT extract(epoch FROM ts)::bigint AS ts, open::float8 AS open,
+                      high::float8 AS high, low::float8 AS low, close::float8 AS close,
+                      volume::float8 AS volume
+               FROM candles
+               WHERE pair = $1 AND ts >= to_timestamp($2) AND ts < to_timestamp($3)
+               ORDER BY ts LIMIT $4""",
+            [pair, cursor, until_ts, page],
+        )
+        candles += [{k: (int(v) if k == "ts" else float(v)) for k, v in r.items()} for r in rows]
+        if len(rows) < page:
+            return candles
+        cursor = candles[-1]["ts"] + 1
 
 
 def candle_range(pair):
@@ -92,3 +102,10 @@ def candle_range(pair):
     )[0]
     to_int = lambda v: None if v is None else int(v)
     return int(r["n"]), to_int(r["first"]), to_int(r["last"])
+
+
+def last_candle_before(pair, ts):
+    """ts de la dernière bougie strictement avant `ts` (None s'il n'y en a pas)."""
+    r = query("""SELECT extract(epoch FROM max(ts))::bigint AS last FROM candles
+                 WHERE pair = $1 AND ts < to_timestamp($2)""", [pair, ts])[0]
+    return None if r["last"] is None else int(r["last"])

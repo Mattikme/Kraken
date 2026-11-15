@@ -56,12 +56,11 @@ def summarize(pf, curve, capital):
 
 def run(candles, fee_factory, start_ts, capital=config.START_CAPITAL_EUR):
     """Lance toutes les stratégies. Renvoie {nom: {stats, trades, curve, params}}."""
-    closes = [c["close"] for c in candles]
     # Premier indice >= start_ts, en gardant au moins une bougie avant (pour la décision).
     start_index = max(1, next(i for i, c in enumerate(candles) if c["ts"] >= start_ts))
     out = {}
     for name, (fn, params) in STRATEGIES.items():
-        pf, curve = simulate(candles, fn(closes), start_index, fee_factory(), capital)
+        pf, curve = simulate(candles, fn(candles), start_index, fee_factory(), capital)
         out[name] = {"stats": summarize(pf, curve, capital), "trades": pf.trades,
                      "curve": curve, "params": params}
     reference = out["buy_and_hold"]["stats"]["final_eur"]
@@ -76,19 +75,21 @@ def count_gaps(candles):
     return sum((b["ts"] - a["ts"]) // HOUR - 1 for a, b in zip(candles, candles[1:]))
 
 
-def save(results, fee_name, start_ts, end_ts, store_details):
+def save(results, fee_name, period_days, start_ts, end_ts, store_details):
     """Écrit les résultats dans Neon (remplace ceux du backtest précédent)."""
     now = datetime.now(timezone.utc).isoformat()
-    statements = [("DELETE FROM backtest_results WHERE fee_model = $1", [fee_name])]
+    statements = [("DELETE FROM backtest_results WHERE fee_model = $1 AND period_days = $2",
+                   [fee_name, period_days])]
     for name, res in results.items():
         s = res["stats"]
         statements.append((
-            """INSERT INTO backtest_results (strategy, fee_model, run_at, start_ts, end_ts,
-                 start_eur, final_eur, return_pct, n_trades, n_round_trips, win_rate_pct,
+            """INSERT INTO backtest_results (strategy, fee_model, period_days, run_at, start_ts,
+                 end_ts, start_eur, final_eur, return_pct, n_trades, n_round_trips, win_rate_pct,
                  fees_eur, max_drawdown_pct, beats_buy_hold, params)
-               VALUES ($1,$2,$3,to_timestamp($4),to_timestamp($5),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb)""",
-            [name, fee_name, now, start_ts, end_ts, config.START_CAPITAL_EUR, s["final_eur"],
-             s["return_pct"], s["n_trades"], s["n_round_trips"], s["win_rate_pct"],
+               VALUES ($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,$8,$9,$10,$11,$12,$13,$14,
+                       $15,$16::jsonb)""",
+            [name, fee_name, period_days, now, start_ts, end_ts, config.START_CAPITAL_EUR,
+             s["final_eur"], s["return_pct"], s["n_trades"], s["n_round_trips"], s["win_rate_pct"],
              s["fees_eur"], s["max_drawdown_pct"], s["beats_buy_hold"], json.dumps(res["params"])]))
     if store_details:   # détail (trades + courbe) uniquement pour le scénario principal
         statements.append(("DELETE FROM trades WHERE mode = 'backtest'", []))
@@ -114,44 +115,65 @@ def save(results, fee_name, start_ts, end_ts, store_details):
 
 def report(title, results):
     print(f"\n=== {title} ===")
-    print(f"{'stratégie':<18}{'final EUR':>11}{'rendement':>11}{'ordres':>8}"
+    print(f"{'stratégie':<23}{'final EUR':>11}{'rendement':>11}{'ordres':>8}"
           f"{'réussite':>10}{'frais EUR':>11}{'drawdown':>10}  bat B&H ?")
     for name, res in results.items():
         s = res["stats"]
         win = "—" if s["win_rate_pct"] is None else f"{s['win_rate_pct']:.1f} %"
         beats = {None: "—", True: "OUI", False: "NON"}[s["beats_buy_hold"]]
-        print(f"{name:<18}{s['final_eur']:>11.2f}{s['return_pct']:>+10.1f}%{s['n_trades']:>8}"
+        print(f"{name:<23}{s['final_eur']:>11.2f}{s['return_pct']:>+10.1f}%{s['n_trades']:>8}"
               f"{win:>10}{s['fees_eur']:>11.2f}{s['max_drawdown_pct']:>9.1f}%  {beats}")
+
+
+def yearly_report(results):
+    """Rendement de chaque année civile, pour voir si le résultat tient dans la durée."""
+    year_of = lambda ts: datetime.fromtimestamp(ts, timezone.utc).year
+    print(f"\n{'année':<8}" + "".join(f"{name:>23}" for name in results))
+    curves = {name: res["curve"] for name, res in results.items()}
+    years = sorted({year_of(ts) for ts, _ in curves["buy_and_hold"]})
+    for year in years:
+        line = f"{year:<8}"
+        for name, curve in curves.items():
+            values = [v for ts, v in curve if year_of(ts) == year]
+            before = [v for ts, v in curve if year_of(ts) < year]
+            start = before[-1] if before else config.START_CAPITAL_EUR
+            line += f"{(values[-1] / start - 1) * 100:>+22.1f}%"
+        print(line)
 
 
 def main():
     db.init_schema()
-    _, _, last = db.candle_range(config.PAIR)
+    _, first, last = db.candle_range(config.PAIR)
     if last is None:
         raise SystemExit("Aucune bougie dans Neon : lance d'abord bot.history.")
-    start_ts = last - config.BACKTEST_DAYS * 86400
-    warmup = 5 * 24 * HOUR                       # marge pour calculer les moyennes
-    candles = db.load_candles(config.PAIR, start_ts - warmup)
-    if candles[0]["ts"] > start_ts:
-        raise SystemExit("Historique insuffisant (moins de 2 ans) : lance bot.history.")
-    iso = lambda ts: datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M")
-    print(f"Période : {iso(start_ts)} -> {iso(last)} UTC "
-          f"({len(candles)} bougies, {count_gaps(candles)} heure(s) manquante(s)).")
+    end_ts = last // 86400 * 86400               # on s'arrête au dernier jour UTC complet
+    iso = lambda ts: datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
+    fee_models = [("frais Kraken réels (paliers selon volume 30 j)", TieredFee),
+                  ("pire cas, palier 1 permanent (0,80 %)",
+                   lambda: FlatFee(config.TAKER_FEE_TIERS[0][1]))]
+    verdicts = {}
+    for period_days in (config.BACKTEST_DAYS, config.ROBUSTNESS_DAYS):
+        start_ts = end_ts - period_days * 86400
+        candles = db.load_candles(config.PAIR, start_ts - config.WARMUP_DAYS * 86400, end_ts)
+        if not candles or candles[0]["ts"] > start_ts - (config.WARMUP_DAYS - 1) * 86400:
+            raise SystemExit(f"Historique insuffisant pour {period_days} jours : lance bot.history.")
+        print(f"\n######## {period_days} jours : {iso(start_ts)} -> {iso(end_ts)} UTC "
+              f"({len(candles)} bougies, {count_gaps(candles)} heure(s) manquante(s)) ########")
+        for index, (title, factory) in enumerate(fee_models):
+            results = run(candles, factory, start_ts)
+            report(title, results)
+            is_main = index == 0 and period_days == config.BACKTEST_DAYS
+            save(results, factory().name, period_days, start_ts, end_ts, store_details=is_main)
+            if index == 0:
+                verdicts[period_days] = [n for n, r in results.items() if r["stats"]["beats_buy_hold"]]
+                if period_days == config.ROBUSTNESS_DAYS:
+                    yearly_report(results)
 
-    scenarios = [("Frais Kraken réels (paliers selon volume 30 j)", TieredFee, True),
-                 ("Pire cas : palier 1 permanent (0,80 %)",
-                  lambda: FlatFee(config.TAKER_FEE_TIERS[0][1]), False)]
-    main_results = None
-    for title, factory, is_main in scenarios:
-        results = run(candles, factory, start_ts)
-        report(title, results)
-        save(results, factory().name, start_ts, last, store_details=is_main)
-        main_results = main_results or results
-
-    winners = [n for n, r in main_results.items() if r["stats"]["beats_buy_hold"]]
-    print("\nVERDICT (frais réels) : " + (
-        f"{', '.join(winners)} bat le buy & hold après frais." if winners
-        else "AUCUNE stratégie ne bat le buy & hold après frais."))
+    print()
+    for period_days, winners in verdicts.items():
+        print(f"VERDICT {period_days} jours (frais réels) : " + (
+            f"{', '.join(winners)} bat le buy & hold après frais." if winners
+            else "AUCUNE stratégie ne bat le buy & hold après frais."))
 
 
 if __name__ == "__main__":

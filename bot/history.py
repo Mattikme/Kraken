@@ -1,4 +1,4 @@
-"""Historique : remplit Neon avec au moins 2 ans de bougies 1 h BTC/EUR.
+"""Historique : remplit Neon avec 10 ans de bougies 1 h BTC/EUR.
 
 L'API OHLC de Kraken ne donne que les 720 dernières bougies (30 jours).
 On assemble donc trois sources, toutes officielles Kraken :
@@ -7,7 +7,7 @@ On assemble donc trois sources, toutes officielles Kraken :
   2. l'endpoint public Trades, pour le trou entre la fin de l'archive et
      le début de la fenêtre OHLC (les transactions sont regroupées par heure) ;
   3. l'endpoint public OHLC pour les 30 derniers jours.
-À lancer une seule fois (rejouable sans risque : pas de doublons).
+Rejouable sans risque : pas de doublons, et rien n'est retéléchargé si c'est déjà là.
 """
 import csv
 import io
@@ -121,19 +121,19 @@ def main():
     db.init_schema()
     recent = kraken_api.fetch_ohlc(config.PAIR, config.INTERVAL_MIN)        # source 3
     now = recent[-1]["ts"]
-    since = now - (config.BACKTEST_DAYS + 10) * 86400                        # 2 ans + marge
-    n, first, last = db.candle_range(config.PAIR)
-    expected = (now - since) // HOUR
-    if n and first <= since + HOUR and n >= expected * 0.999:
-        db.upsert_candles(config.PAIR, recent)
-        print(f"Historique déjà présent ({n} bougies) : rien à télécharger.")
-        return
+    since = now - config.HISTORY_DAYS * 86400
 
-    archive = candles_from_archive(since)                                    # source 1
-    print(f"Archive officielle : {len(archive)} bougies.")
-    db.upsert_candles(config.PAIR, archive)
+    _, first, _ = db.candle_range(config.PAIR)                              # source 1
+    if first is not None and first <= since + 86400:
+        print("Archive déjà chargée : rien à télécharger.")
+    else:
+        archive = candles_from_archive(since)
+        db.upsert_candles(config.PAIR, archive)
+        print(f"Archive officielle : {len(archive)} bougies.")
 
-    gap_start, gap_end = archive[-1]["ts"] + HOUR, recent[0]["ts"]           # source 2
+    # Trou éventuel entre la dernière bougie stockée et la fenêtre OHLC.   # source 2
+    gap_end = recent[0]["ts"]
+    gap_start = db.last_candle_before(config.PAIR, gap_end) + HOUR
     if gap_start < gap_end:
         # On reconstruit 3 h de plus que nécessaire pour comparer avec l'API OHLC.
         rebuilt = candles_from_trades(gap_start, gap_end + 3 * HOUR)
@@ -147,7 +147,8 @@ def main():
 
     db.upsert_candles(config.PAIR, recent)
     n, first, last = db.candle_range(config.PAIR)
-    print(f"Neon contient {n} bougies {config.PAIR} (attendu environ {expected}).")
+    print(f"Neon contient {n} bougies {config.PAIR} "
+          f"(attendu environ {(last - max(first, since)) // HOUR + 1}).")
 
 
 if __name__ == "__main__":

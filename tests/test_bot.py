@@ -33,6 +33,32 @@ def test_les_strategies_ne_regardent_jamais_le_futur(fn):
         assert fn(closes[:cut + 1])[cut] == full[cut]
 
 
+def _hourly(day_closes, hours_per_day=24):
+    """Bougies 1 h : chaque jour reste au même prix (sa clôture)."""
+    return [{"ts": d * 86400 + h * 3600, "open": p, "high": p, "low": p, "close": p, "volume": 1.0}
+            for d, p in enumerate(day_closes) for h in range(hours_per_day)]
+
+
+def test_strategie_journaliere_decide_avec_les_jours_termines_seulement():
+    candles = _hourly([100, 100, 100, 100, 130, 140, 60, 50, 40])
+    target = strategy.daily_sma_cross(candles, fast=2, slow=4)
+    by_day = [target[d * 24:(d + 1) * 24] for d in range(9)]
+    assert all(len(set(day)) == 1 for day in by_day)           # une seule décision par jour
+    daily = [day[0] for day in by_day]
+    assert daily[:4] == [None, None, None, None]               # il faut 4 jours terminés
+    assert daily[4] is False                                   # jours 0-3 plats
+    assert daily[5] is True                                    # la hausse du jour 4 compte au jour 5
+    assert daily[8] is False                                   # la chute est prise en compte
+
+
+def test_strategie_journaliere_ne_regarde_jamais_le_futur():
+    candles = _hourly([100 + (d * 37 % 23) - 0.3 * d for d in range(120)])
+    del candles[500:505]                                       # quelques heures manquantes
+    full = strategy.daily_sma_cross(candles)
+    for cut in (24 * 60 + 5, 24 * 90, len(candles) - 1):
+        assert strategy.daily_sma_cross(candles[:cut + 1])[cut] == full[cut]
+
+
 def test_signal():
     assert strategy.signal(False, True) == "BUY"
     assert strategy.signal(True, False) == "SELL"
@@ -101,7 +127,7 @@ def test_buy_and_hold_sert_de_reference():
     bh = results["buy_and_hold"]
     assert bh["stats"]["n_trades"] == 1 and bh["stats"]["beats_buy_hold"] is None
     assert bh["stats"]["final_eur"] == pytest.approx(1000 / 1.008 / (100 * 1.0005) * 200)
-    for name in ("sma_cross_20_50", "momentum_24h"):
+    for name in ("sma_cross_20_50", "momentum_24h", "sma_cross_daily_20_50"):
         assert results[name]["stats"]["beats_buy_hold"] in (True, False)
         assert results[name]["curve"][0][0] == 60 * 3600   # toutes démarrent au même instant
 

@@ -42,10 +42,11 @@ CREATE TABLE IF NOT EXISTS equity (
   PRIMARY KEY (strategy, ts, mode)
 );
 
--- Résumé du dernier backtest (une ligne par stratégie et par hypothèse de frais).
+-- Résumé du dernier backtest (une ligne par stratégie, hypothèse de frais et durée).
 CREATE TABLE IF NOT EXISTS backtest_results (
   strategy         text        NOT NULL,
   fee_model        text        NOT NULL,   -- 'kraken_tiers' (réel) ou 'flat_0.80' (pire cas)
+  period_days      integer     NOT NULL,   -- 730 = période jugée, 3650 = contrôle sur 10 ans
   run_at           timestamptz NOT NULL,
   start_ts         timestamptz NOT NULL,
   end_ts           timestamptz NOT NULL,
@@ -59,5 +60,5 @@ CREATE TABLE IF NOT EXISTS backtest_results (
   max_drawdown_pct numeric     NOT NULL,
   beats_buy_hold   boolean,                -- NULL pour le buy & hold lui-même
   params           jsonb       NOT NULL,
-  PRIMARY KEY (strategy, fee_model)
+  PRIMARY KEY (strategy, fee_model, period_days)
 );

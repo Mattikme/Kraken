@@ -37,5 +37,15 @@ MOMENTUM_HOURS = 24      # stratégie B : fenêtre du rendement
 MOMENTUM_ENTER = 0.02    # stratégie B : on achète si rendement 24 h > +2 %
 MOMENTUM_EXIT = 0.0      # stratégie B : on vend si rendement 24 h < 0 %
 
-# Backtest : durée rejouée.
+# Stratégie C : la règle A (moyennes 20/50) appliquée à des bougies d'UN JOUR
+# au lieu d'une heure, pour passer très peu d'ordres. Mêmes valeurs que A :
+# aucun nouveau paramètre n'a été choisi en regardant les résultats.
+DAILY_SMA_FAST = 20      # jours
+DAILY_SMA_SLOW = 50      # jours
+
+# Backtest : période jugée (2 ans) et période de contrôle plus longue (10 ans),
+# qui couvre plusieurs marchés haussiers et baissiers.
 BACKTEST_DAYS = 730
+ROBUSTNESS_DAYS = 3650
+WARMUP_DAYS = 70         # historique nécessaire avant le départ (moyenne 50 jours)
+HISTORY_DAYS = ROBUSTNESS_DAYS + WARMUP_DAYS + 10
