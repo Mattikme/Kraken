@@ -42,6 +42,24 @@ CREATE TABLE IF NOT EXISTS equity (
   PRIMARY KEY (strategy, ts, mode)
 );
 
+-- État de la simulation en direct (une ligne par stratégie, mise à jour à chaque passage).
+CREATE TABLE IF NOT EXISTS paper_results (
+  strategy         text        NOT NULL PRIMARY KEY,
+  run_at           timestamptz NOT NULL,   -- dernier passage du bot
+  start_ts         timestamptz NOT NULL,   -- début de la simulation
+  end_ts           timestamptz NOT NULL,   -- dernière clôture prise en compte
+  start_eur        numeric     NOT NULL,
+  final_eur        numeric     NOT NULL,   -- valeur actuelle du portefeuille
+  return_pct       numeric     NOT NULL,
+  n_trades         integer     NOT NULL,
+  n_round_trips    integer     NOT NULL,
+  win_rate_pct     numeric,                -- NULL tant qu'aucun aller-retour n'est clôturé
+  fees_eur         numeric     NOT NULL,
+  max_drawdown_pct numeric     NOT NULL,
+  beats_buy_hold   boolean,                -- NULL pour le buy & hold lui-même
+  position         text        NOT NULL CHECK (position IN ('BTC', 'EUR'))
+);
+
 -- Résumé du dernier backtest (une ligne par stratégie, hypothèse de frais et durée).
 CREATE TABLE IF NOT EXISTS backtest_results (
   strategy         text        NOT NULL,

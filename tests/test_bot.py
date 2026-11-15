@@ -118,7 +118,7 @@ def test_execution_a_l_ouverture_de_la_bougie_suivante():
     pf, curve = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
     assert pf.trades[0]["ts"] == 2 * 3600            # exécuté à l'ouverture de l'heure 2...
     assert pf.trades[0]["price"] == pytest.approx(200 * 1.0005)   # ...au prix de l'heure 2
-    assert curve[0][1] == 1000.0                     # encore en cash à l'heure 1
+    assert curve[:2] == [(3600, 1000.0), (7200, 1000.0)]   # encore en cash pendant l'heure 1
 
 
 def test_buy_and_hold_sert_de_reference():
@@ -129,7 +129,7 @@ def test_buy_and_hold_sert_de_reference():
     assert bh["stats"]["final_eur"] == pytest.approx(1000 / 1.008 / (100 * 1.0005) * 200)
     for name in ("sma_cross_20_50", "momentum_24h", "sma_cross_daily_20_50"):
         assert results[name]["stats"]["beats_buy_hold"] in (True, False)
-        assert results[name]["curve"][0][0] == 60 * 3600   # toutes démarrent au même instant
+        assert results[name]["curve"][0] == (60 * 3600, 1000.0)   # même départ pour toutes
 
 
 def test_compte_les_heures_manquantes():
@@ -152,3 +152,30 @@ def test_regroupement_des_transactions_en_bougies():
     assert history.aggregate_trades(trades) == [
         {"ts": 3600, "open": 10.0, "high": 12.0, "low": 9.0, "close": 9.0, "volume": 2.0},
         {"ts": 7200, "open": 9.5, "high": 9.5, "low": 9.5, "close": 9.5, "volume": 2.0}]
+
+
+# ---------- simulation en direct ----------
+
+def test_signaux_dates_a_la_cloture_et_coherents_avec_les_ordres():
+    from bot import paper_trader
+    candles = _candles([(100, 100)] * 5)
+    target = [None, True, True, False, False]
+    pf, _ = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
+    signals = paper_trader.signals_for(candles, 1, target, pf.trades)
+    assert [s["signal"] for s in signals] == ["BUY", "HOLD", "SELL", "HOLD"]
+    assert signals[0]["ts"] == 2 * 3600 == pf.trades[0]["ts"]    # signal 02:00 -> achat 02:00
+    assert signals[2]["ts"] == 4 * 3600 == pf.trades[1]["ts"]    # signal 04:00 -> vente 04:00
+
+
+def test_simulation_rejouable_sans_doublon():
+    from bot import paper_trader
+    candles = _candles([(100, 100)] * 80 + [(100 + i, 101 + i) for i in range(100)])
+    start_ts = 60 * 3600
+    results = backtest.run(candles, lambda: FlatFee(0.008), start_ts)
+    done_ts = candles[-1]["ts"]                                   # tout sauf la dernière clôture
+    statements = paper_trader.build_statements(results, candles, start_ts, done_ts, "2026-01-01")
+    import json
+    equity = [json.loads(p[1]) for sql, p in statements if "INSERT INTO equity" in sql]
+    assert all(len(rows) == 1 and rows[0]["ts"] == done_ts + 3600 for rows in equity)
+    assert all("ON CONFLICT" in sql for sql, _ in statements)    # aucune écriture en double
+    assert sum("INSERT INTO signals" in sql for sql, _ in statements) == 3   # pas pour le buy & hold

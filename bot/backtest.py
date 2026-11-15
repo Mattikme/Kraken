@@ -28,7 +28,7 @@ def max_drawdown_pct(values):
 def simulate(candles, target, start_index, fee_model, capital=config.START_CAPITAL_EUR):
     """Rejoue une stratégie à partir de `start_index`. Renvoie (portefeuille, courbe)."""
     pf = Portfolio(capital, fee_model)
-    curve = []                                   # (ts, valeur) à chaque clôture
+    curve = [(candles[start_index]["ts"], capital)]   # (heure, valeur) ; départ = capital initial
     for i in range(start_index, len(candles)):
         candle = candles[i]
         wanted = target[i - 1]                   # décision prise à la clôture précédente
@@ -36,7 +36,7 @@ def simulate(candles, target, start_index, fee_model, capital=config.START_CAPIT
             pf.buy(candle["ts"], candle["open"])
         elif wanted is False and pf.btc > 0:
             pf.sell(candle["ts"], candle["open"])
-        curve.append((candle["ts"], pf.value(candle["close"])))
+        curve.append((candle["ts"] + HOUR, pf.value(candle["close"])))   # valeur à la clôture
     return pf, curve
 
 
@@ -60,9 +60,10 @@ def run(candles, fee_factory, start_ts, capital=config.START_CAPITAL_EUR):
     start_index = max(1, next(i for i, c in enumerate(candles) if c["ts"] >= start_ts))
     out = {}
     for name, (fn, params) in STRATEGIES.items():
-        pf, curve = simulate(candles, fn(candles), start_index, fee_factory(), capital)
-        out[name] = {"stats": summarize(pf, curve, capital), "trades": pf.trades,
-                     "curve": curve, "params": params}
+        target = fn(candles)
+        pf, curve = simulate(candles, target, start_index, fee_factory(), capital)
+        out[name] = {"stats": summarize(pf, curve, capital), "trades": pf.trades, "curve": curve,
+                     "params": params, "target": target, "in_btc": pf.btc > 0}
     reference = out["buy_and_hold"]["stats"]["final_eur"]
     for name, res in out.items():
         res["stats"]["beats_buy_hold"] = (
@@ -97,7 +98,6 @@ def save(results, fee_name, period_days, start_ts, end_ts, store_details):
         for name, res in results.items():
             trades = [dict(t) for t in res["trades"]]
             daily = [{"ts": ts, "v": v} for ts, v in res["curve"] if ts % 86400 == 0]
-            daily.append({"ts": res["curve"][-1][0], "v": res["curve"][-1][1]})
             statements.append((
                 """INSERT INTO trades (strategy, ts, side, price, qty, fee, mode)
                    SELECT $1, to_timestamp(t.ts), t.side, t.price, t.qty, t.fee, 'backtest'

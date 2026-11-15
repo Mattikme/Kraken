@@ -1,4 +1,4 @@
-# Collecte des bougies 1 h BTC/EUR toutes les 15 minutes.
+# Toutes les 15 minutes : collecte des bougies 1 h BTC/EUR, puis simulation en direct.
 name: collector
 
 on:
@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python -m bot.collector
+      - name: Collecte des bougies
+        run: python -m bot.collector
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Simulation en direct (argent fictif)
+        run: python -m bot.paper_trader
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

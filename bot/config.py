@@ -1,4 +1,5 @@
 """Paramètres du bot. Tout ce qui est chiffré ici a une source vérifiable."""
+from datetime import datetime, timezone
 
 # Paire tradée (nom « altname » de l'API Kraken) et taille des bougies.
 PAIR = "XBTEUR"
@@ -49,3 +50,7 @@ BACKTEST_DAYS = 730
 ROBUSTNESS_DAYS = 3650
 WARMUP_DAYS = 70         # historique nécessaire avant le départ (moyenne 50 jours)
 HISTORY_DAYS = ROBUSTNESS_DAYS + WARMUP_DAYS + 10
+
+# Simulation en direct (argent fictif) : première bougie prise en compte.
+# Date fixée à l'avance ; ne pas la modifier une fois la simulation lancée.
+PAPER_START_TS = int(datetime(2026, 11, 15, 3, 0, tzinfo=timezone.utc).timestamp())
