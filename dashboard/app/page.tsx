@@ -41,7 +41,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
       <header className="card top">
         <div>
           <p className="label">Kraken · sans levier</p>
-          <h1>BTC/EUR</h1>
+          <h1>{strategy === "tendance_risque" ? "Actions · or · bitcoin" : "BTC/EUR"}</h1>
         </div>
         <div className="top-right">
           {isPaper ? (
