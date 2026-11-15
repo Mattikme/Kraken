@@ -246,3 +246,59 @@ def test_signaux_et_position_pour_une_exposition_partielle():
     weights = paper_trader.weights_at_close(candles, 1, pf.trades, curve)
     assert weights == pytest.approx([0.0, 0.5, 0.5, 0.75, 0.0], abs=0.002)
     assert [paper_trader.position_label(w) for w in (0.0, 0.25, 0.752, 1.0)] == ["EUR", "25 % BTC", "75 % BTC", "BTC"]
+
+
+# ---------- recherche multi-actifs ----------
+
+def test_multi_outils_mensuels():
+    from bot import multi
+    days = list(range(0, 120))                                    # 1970-01-01 -> fin avril
+    assert [multi.to_date(days[i]).isoformat() for i in multi.month_ends(days)] == [
+        "1970-01-31", "1970-02-28", "1970-03-31"]
+    assert multi.forward_fill([1, 2, 3, 4], {2: 5.0, 4: 7.0}) == [None, 5.0, 5.0, 7.0]
+    assert multi.trend_is_up([1.0] * 9) is None                   # pas assez d'historique
+    assert multi.trend_is_up(list(range(1, 11))) is True
+    assert multi.trend_is_up(list(range(10, 0, -1))) is False
+    assert multi.monthly_vol([100.0] * 12) is None
+    assert multi.monthly_vol([100.0 * 1.01 ** k for k in range(13)]) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_multi_simulation_frais_et_repartition():
+    from bot import multi
+    days = list(range(0, 5))
+    prices = {"ACTIONS": [100.0] * 5, "OR": [50.0, 50.0, 50.0, 100.0, 100.0]}
+    targets = [{"ACTIONS": 0.5, "OR": 0.5}, None, None, None, None]
+    curve, orders, paid = multi.simulate(days, prices, targets, 0, capital=1000.0)
+    cost = multi.XSTOCK_FEE + config.SLIPPAGE
+    assert orders == 2 and paid == pytest.approx(1000 * cost)
+    assert curve[1][1] == pytest.approx(1000 * (1 - cost))        # jour 1 : achat, frais payés
+    assert curve[-1][1] == pytest.approx(500 * (1 - cost) * 3)    # l'or double : 500 + 1000 (net de frais)
+    # Décision prise au jour 0, exécutée au jour 1 : le jour 0 reste en EUR.
+    assert curve[0] == (0, 1000.0)
+
+
+def test_multi_tendance_sort_d_un_actif_en_baisse():
+    from bot import multi
+    days = list(range(0, 500))
+    up = [100.0 + d for d in days]
+    down = [600.0 - d for d in days]
+    targets = multi.trend(("ACTIONS", "OR"))(days, {"ACTIONS": up, "OR": down})
+    decisions = [t for t in targets if t]
+    assert len(decisions) >= 5 and all(t == {"ACTIONS": 0.5, "OR": 0.0} for t in decisions)
+    # La décision d'une fin de mois n'utilise que les cours déjà connus.
+    cut = multi.month_ends(days)[12]
+    short = multi.trend(("ACTIONS", "OR"))(days[:cut + 2], {"ACTIONS": up[:cut + 2], "OR": down[:cut + 2]})
+    assert short[cut] == targets[cut]
+
+
+def test_multi_parts_selon_le_risque():
+    from bot import multi
+    days = list(range(0, 800))
+    calm = [100.0 * (1.0005 ** d) * (1 + 0.01 * ((d // 30) % 2)) for d in days]
+    wild = [100.0 * (1.0005 ** d) * (1 + 0.20 * ((d // 30) % 2)) for d in days]
+    targets = multi.trend(("ACTIONS", "BTC"), by_risk=True)(days, {"ACTIONS": calm, "BTC": wild})
+    last = [t for t in targets if t][-1]
+    held = {a: w for a, w in last.items() if w > 0}
+    assert held and all(0 < w < 1 for w in held.values())
+    if len(held) == 2:
+        assert held["ACTIONS"] > 3 * held["BTC"]                  # l'actif calme pèse bien plus

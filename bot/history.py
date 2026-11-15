@@ -73,10 +73,10 @@ class RemoteParts:
         return out
 
 
-def candles_from_archive(since_ts):
-    """Bougies 1 h de l'archive officielle, à partir de `since_ts`."""
+def candles_from_archive(since_ts, interval_min=config.INTERVAL_MIN):
+    """Bougies de l'archive officielle (1 h par défaut), à partir de `since_ts`."""
     remote = RemoteParts([ARCHIVE_URL.format(i) for i in range(ARCHIVE_PARTS)])
-    wanted = f"{config.PAIR}_{config.INTERVAL_MIN}.csv"
+    wanted = f"{config.PAIR}_{interval_min}.csv"
     with zipfile.ZipFile(remote) as archive:
         name = next(n for n in archive.namelist() if n.split("/")[-1] == wanted)
         text = archive.read(name).decode()

@@ -80,3 +80,13 @@ CREATE TABLE IF NOT EXISTS backtest_results (
   params           jsonb       NOT NULL,
   PRIMARY KEY (strategy, fee_model, period_days)
 );
+
+-- Cours journaliers d'actifs hors Kraken, pour la recherche uniquement (source externe,
+-- indiquée dans la colonne `source`). Jamais utilisés pour passer des ordres.
+CREATE TABLE IF NOT EXISTS daily_prices (
+  symbol text    NOT NULL,          -- ex. 'SPY', 'GLD', 'EURUSD'
+  day    date    NOT NULL,
+  close  numeric NOT NULL,          -- clôture ajustée (dividendes réinvestis) pour les ETF
+  source text    NOT NULL,
+  PRIMARY KEY (symbol, day)
+);

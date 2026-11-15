@@ -25,3 +25,5 @@ jobs:
         run: python -m bot.history
       - name: Test des stratégies candidates
         run: python -m bot.research
+      - name: Test des portefeuilles multi-actifs
+        run: python -m bot.multi
