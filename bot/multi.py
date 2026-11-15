@@ -15,9 +15,13 @@ Hypothèses (prudentes) :
  - bitcoin : bougies Kraken, frais preneur réels selon le volume 30 jours ;
  - glissement 0,05 % sur chaque ordre ; les EUR non investis rapportent 0 % ;
  - décision avec les cours de clôture d'un jour, exécution à la clôture du lendemain.
-Ce script lit Neon et affiche un rapport ; il n'écrit rien.
+Ce script lit Neon et affiche un rapport. Avec l'option --save, il enregistre
+aussi dans Neon le backtest du portefeuille retenu (pour le tableau de bord).
 """
+import json
 import math
+import sys
+from datetime import datetime, timezone
 from datetime import date, timedelta
 
 from . import config, db
@@ -46,12 +50,27 @@ def forward_fill(days, by_day):
     return out
 
 
-def load_prices(first_day, last_day):
-    """Cours en EUR de chaque actif pour chaque jour de [first_day, last_day]."""
+KRAKEN_SYMBOLS = {"SPY": "SPYxUSD", "GLD": "GLDxUSD", "EURUSD": "EURUSD"}   # symbole -> paire Kraken
+ASSET_PAIRS = {"ACTIONS": "SPYxUSD", "OR": "GLDxUSD", "BTC": config.PAIR}     # actif -> paire Kraken
+
+
+def load_prices(first_day, last_day, kraken_only=False):
+    """Cours en EUR de chaque actif pour chaque jour de [first_day, last_day].
+
+    kraken_only=False : historique long des ETF d'origine (recherche).
+    kraken_only=True  : uniquement les cours Kraken (simulation en direct).
+    """
     days = list(range(first_day, last_day + 1))
     raw = {}
     for row in db.query("SELECT symbol, (day - DATE '1970-01-01') AS d, close::float8 AS close FROM daily_prices"):
-        raw.setdefault(row["symbol"], {})[int(row["d"])] = float(row["close"])
+        if not kraken_only or row["symbol"] == "BTCEUR":
+            raw.setdefault(row["symbol"], {})[int(row["d"])] = float(row["close"])
+    if kraken_only:
+        for symbol, pair in KRAKEN_SYMBOLS.items():
+            raw[symbol] = {}
+            for row in db.query("""SELECT (ts::date - DATE '1970-01-01') AS d, close::float8 AS close
+                                   FROM candles WHERE pair = $1""", [pair]):
+                raw[symbol][int(row["d"])] = float(row["close"])
     btc = dict(raw.get("BTCEUR", {}))                            # avant 2016 : archive Kraken journalière
     for row in db.query(
             """SELECT DISTINCT ON (ts::date) (ts::date - DATE '1970-01-01') AS d, close::float8 AS close
@@ -142,6 +161,7 @@ CANDIDATES = {
     "tendance_tiers": trend(ALL),
     "tendance_risque": trend(ALL, by_risk=True),
 }
+RETAINED = "tendance_risque"      # portefeuille retenu pour la simulation en direct
 # Contrôle long (2006-2026, crise de 2008 incluse) : sans bitcoin, qui n'existait pas.
 CANDIDATES_LONG = {
     "actions_seules": static({"ACTIONS": 1.0}),
@@ -154,10 +174,11 @@ CANDIDATES_LONG = {
 # ---------- simulation ----------
 
 def simulate(days, prices, targets, start_index, capital=config.START_CAPITAL_EUR):
-    """Rejoue un portefeuille. Renvoie (courbe [(jour, valeur)], nombre d'ordres, frais)."""
+    """Rejoue un portefeuille. Renvoie (courbe [(jour, valeur)], ordres, frais payés).
+    Chaque ordre : {day, asset, side, price (EUR), qty, fee (EUR)}."""
     fees = {a: TieredFee() if a == "BTC" else FlatFee(XSTOCK_FEE) for a in prices}
     cash, qty = capital, {a: 0.0 for a in prices}
-    orders, paid, curve = 0, 0.0, [(days[start_index], capital)]
+    orders, paid, curve = [], 0.0, [(days[start_index], capital)]
     pending = dict(targets[start_index]) if targets[start_index] else None
     for i in range(start_index + 1, len(days)):
         ts = days[i] * 86400
@@ -174,7 +195,8 @@ def simulate(days, prices, targets, start_index, capital=config.START_CAPITAL_EU
                     qty[a] -= sold
                     paid += sold * price[a] * rate
                     fees[a].record(ts, sold * price[a])
-                    orders += 1
+                    orders.append({"day": days[i], "asset": a, "side": "sell", "price": price[a],
+                                   "qty": sold, "fee": sold * price[a] * rate})
             buys = {a: d for a, d in deltas.items() if d > 0}
             scale = min(1.0, cash / sum(buys.values())) if buys else 0.0
             for a, d in buys.items():                            # puis achats, dans la limite du cash
@@ -184,7 +206,8 @@ def simulate(days, prices, targets, start_index, capital=config.START_CAPITAL_EU
                 cash -= spent
                 paid += spent * rate
                 fees[a].record(ts, spent)
-                orders += 1
+                orders.append({"day": days[i], "asset": a, "side": "buy", "price": price[a],
+                               "qty": spent * (1 - rate) / price[a], "fee": spent * rate})
             cash = max(0.0, cash)
         curve.append((days[i], cash + sum(qty[a] * price[a] for a in qty if price[a])))
         pending = dict(targets[i]) if targets[i] else None
@@ -215,7 +238,7 @@ def measure(curve, orders, paid):
     return {
         "final": values[-1], "cagr": ((values[-1] / values[0]) ** (1 / years) - 1) * 100,
         "drawdown": worst * 100, "sharpe": mean / spread * math.sqrt(365) if spread else 0.0,
-        "orders": orders, "fees": paid, "yearly": yearly,
+        "orders": len(orders), "fees": paid, "yearly": yearly,
         "positive_years": sum(1 for r in yearly.values() if r > 0), "worst_year": min(yearly.values()),
         "last_2y": (values[-1] / two_years_ago - 1) * 100,
         "halves": ((middle / values[0] - 1) * 100, (values[-1] / middle - 1) * 100),
@@ -238,16 +261,69 @@ def report(title, results):
         print(f"{year:<7}" + "".join(f"{m['yearly'][year]:>+20.1f}%" for m in results.values()))
 
 
-def run(candidates, days, prices, start_day):
+def replay(fn, days, prices, start_day):
+    """Rejoue un portefeuille depuis `start_day`. Renvoie (courbe, ordres, frais)."""
     start_index = days.index(start_day)
-    results = {}
-    for name, fn in candidates.items():
-        targets = fn(days, prices)
-        # Avant le départ, seule compte la dernière décision : elle est exécutée au premier jour.
-        last = next((targets[j] for j in range(start_index, -1, -1) if targets[j]), None)
-        targets = [None] * start_index + [last] + targets[start_index + 1:]
-        results[name] = measure(*simulate(days, prices, targets, start_index))
-    return results
+    targets = fn(days, prices)
+    # Avant le départ, seule compte la dernière décision : elle est exécutée au premier jour.
+    last = next((targets[j] for j in range(start_index, -1, -1) if targets[j]), None)
+    targets = [None] * start_index + [last] + targets[start_index + 1:]
+    return simulate(days, prices, targets, start_index)
+
+
+def run(candidates, days, prices, start_day):
+    return {name: measure(*replay(fn, days, prices, start_day)) for name, fn in candidates.items()}
+
+
+def close_ts(day):
+    """Instant de la clôture d'un jour UTC (minuit suivant), en secondes."""
+    return (day + 1) * 86400
+
+
+def trade_rows(orders):
+    """Ordres au format de la table trades (prix en EUR, horodatés à la clôture du jour)."""
+    return [{"ts": close_ts(o["day"]), "pair": ASSET_PAIRS[o["asset"]], "side": o["side"],
+             "price": o["price"], "qty": o["qty"], "fee": o["fee"]} for o in orders]
+
+
+def save_backtest(days, prices, end_day):
+    """Enregistre dans Neon le backtest du portefeuille retenu (2 ans et 10 ans)."""
+    name, fn = RETAINED, CANDIDATES[RETAINED]
+    now = datetime.now(timezone.utc).isoformat()
+    statements = [("DELETE FROM backtest_results WHERE strategy = $1", [name]),
+                  ("DELETE FROM trades WHERE strategy = $1 AND mode = 'backtest'", [name]),
+                  ("DELETE FROM equity WHERE strategy = $1 AND mode = 'backtest'", [name])]
+    for period in (config.BACKTEST_DAYS, config.ROBUSTNESS_DAYS):
+        start = end_day - period
+        curve, orders, paid = replay(fn, days, prices, start)
+        m = measure(curve, orders, paid)
+        btc = measure(*replay(CANDIDATES["btc_seul"], days, prices, start))
+        statements.append((
+            """INSERT INTO backtest_results (strategy, fee_model, period_days, run_at, start_ts, end_ts,
+                 start_eur, final_eur, return_pct, n_trades, n_round_trips, win_rate_pct, fees_eur,
+                 max_drawdown_pct, beats_buy_hold, params)
+               VALUES ($1,'kraken_tiers',$2,$3,to_timestamp($4),to_timestamp($5),$6,$7,$8,$9,0,NULL,$10,$11,
+                       $12,$13::jsonb)""",
+            [name, period, now, close_ts(start), close_ts(end_day), config.START_CAPITAL_EUR, m["final"],
+             (m["final"] / config.START_CAPITAL_EUR - 1) * 100, m["orders"], m["fees"], m["drawdown"],
+             m["final"] > btc["final"],
+             json.dumps({"actifs": list(ALL), "tendance_mois": TREND_MONTHS, "volatilite_mois": VOL_MONTHS,
+                         "cours": "ETF d'origine SPY et GLD (Yahoo Finance), pas les jetons Kraken"})]))
+        if period == config.BACKTEST_DAYS:
+            points = [{"ts": close_ts(d), "v": v} for d, v in curve]
+            statements.append((
+                """INSERT INTO equity (strategy, ts, value_eur, mode)
+                   SELECT $1, to_timestamp(e.ts), e.v, 'backtest'
+                   FROM jsonb_to_recordset($2::jsonb) AS e(ts bigint, v numeric)""",
+                [name, json.dumps(points)]))
+            statements.append((
+                """INSERT INTO trades (strategy, ts, side, price, qty, fee, mode, pair)
+                   SELECT $1, to_timestamp(t.ts), t.side, t.price, t.qty, t.fee, 'backtest', t.pair
+                   FROM jsonb_to_recordset($2::jsonb)
+                        AS t(ts bigint, pair text, side text, price numeric, qty numeric, fee numeric)""",
+                [name, json.dumps(trade_rows(orders))]))
+    db.transaction(statements)
+    print(f"\nBacktest de {name} enregistré dans Neon (2 ans et 10 ans).")
 
 
 def main():
@@ -265,6 +341,9 @@ def main():
     long_prices = {a: p for a, p in prices.items() if a != "BTC"}
     report(f"Contrôle long : {iso(long_start)} -> {iso(end_day)}, sans bitcoin (crise de 2008 incluse)",
            run(CANDIDATES_LONG, days, long_prices, long_start))
+
+    if "--save" in sys.argv:
+        save_backtest(days, prices, end_day)
 
 
 if __name__ == "__main__":

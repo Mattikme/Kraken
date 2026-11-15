@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS trades (
   qty      numeric     NOT NULL,        -- quantité de BTC
   fee      numeric     NOT NULL,        -- frais en EUR
   mode     text        NOT NULL CHECK (mode IN ('backtest', 'paper', 'live')),
-  PRIMARY KEY (strategy, ts, mode)
+  pair     text        NOT NULL DEFAULT 'XBTEUR',   -- actif traité (paire Kraken)
+  PRIMARY KEY (strategy, ts, mode, pair)
 );
 
 -- Valeur du portefeuille dans le temps.

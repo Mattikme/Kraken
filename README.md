@@ -11,6 +11,8 @@ Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 | `bot/history.py` | 10 ans d'historique (archive officielle Kraken + API) | GitHub Actions `backtest` |
 | `bot/strategy.py` | A : moyennes mobiles 20/50 (1 h) · B : momentum 24 h · C : moyennes mobiles 20/50 (1 jour) · D : ensemble de tendances · référence : buy & hold | — |
 | `bot/research.py` | test de six stratégies candidates sur 10 ans (lecture seule) | GitHub Actions `research` |
+| `bot/multi.py` | test de portefeuilles actions + or + bitcoin | GitHub Actions `research` et `backtest` |
+| `bot/multi_paper.py` | simulation en direct du portefeuille retenu (cours Kraken) | GitHub Actions `collector` |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
 | `bot/paper_trader.py` | simulation en direct sur 1 000 € fictifs, après chaque collecte | GitHub Actions `collector` |
@@ -81,6 +83,39 @@ dans les deux moitiés de la période. Toutes réduisent la pire baisse. Sur les
 hold (×1,18 à ×1,50) ; sur les 5 premières (BTC ×80), elles font nettement moins
 bien. L'ensemble de tendances est le meilleur compromis mesuré ; il a été choisi
 après coup parmi six, donc son avantage est probablement surestimé.
+
+## Recherche multi-actifs : actions, or et bitcoin
+
+Kraken permet aussi de trader des ETF tokenisés (SPYx = S&P 500, GLDx = or) avec
+0,08 % de frais preneur, et des devises. Portefeuilles fixés avant le test
+(`bot/multi.py`), vus en EUR, frais et conversion EUR/USD inclus. Les ETF
+tokenisés n'existant que depuis 2025, le test utilise l'historique des ETF
+d'origine (table `daily_prices`). Lancé par GitHub Actions le 2026-11-15.
+
+**10 ans (2016-11-16 → 2026-11-14), départ 1 000 €**
+
+| Portefeuille | Final | Par an | Pire baisse | Années positives | Pire année | 2 dernières années |
+|---|---|---|---|---|---|---|
+| Tendance pondérée par le risque (retenu) | 4 358 € | +15,9 % | 13,6 % | 9 / 11 | −6,1 % | +24,6 % |
+| 60 % actions, 30 % or, 10 % bitcoin | 10 117 € | +26,1 % | 27,7 % | 9 / 11 | −12,2 % | +25,4 % |
+| Tendance, un tiers chacun | 12 660 € | +28,9 % | 35,0 % | 8 / 11 | −24,3 % | +10,0 % |
+| Un tiers chacun, fixe | 17 050 € | +32,8 % | 39,5 % | 8 / 11 | −28,9 % | +13,8 % |
+| Actions seules | 3 895 € | +14,6 % | 33,1 % | 9 / 11 | −13,1 % | +24,3 % |
+| Bitcoin seul | 83 716 € | +55,7 % | 82,5 % | 7 / 11 | −73,0 % | −29,7 % |
+
+**Contrôle long sans bitcoin (2006 → 2026, crise de 2008 incluse)** : la version
+actions + or du portefeuille retenu fait +9,2 % par an, pire baisse 18,6 %,
+18 années positives sur 21, pire année −5,8 % (2008 : −4,1 % quand les actions
+perdaient 34 %).
+
+Le portefeuille retenu (`tendance_risque`) : chaque actif n'est détenu que si son
+cours de fin de mois dépasse la moyenne des 10 dernières fins de mois (règle de
+Faber) ; sa part est d'autant plus petite qu'il est volatil ; le reste est en EUR.
+Il tourne en simulation avec les seuls cours Kraken (`bot/multi_paper.py`).
+
+Limites : passé favorable aux actions américaines et à l'or ; ETF d'origine et non
+jetons Kraken dans le test ; années négatives possibles (2018, 2022) ; les jetons
+ajoutent un risque d'émetteur ; rien ne garantit l'avenir.
 
 ## Étape 2 : simulation en direct
 

@@ -21,6 +21,12 @@ def main():
     print(f"Reçu {len(candles)} bougies ({iso(candles[0]['ts'])} -> {iso(candles[-1]['ts'])}).")
     print(f"Neon contient {n} bougies {config.PAIR} ({iso(first)} -> {iso(last)}).")
 
+    # Bougies d'un jour des autres actifs du portefeuille (ETF tokenisés, EUR/USD).
+    for pair, asset_class in config.DAILY_PAIRS.items():
+        daily = kraken_api.fetch_ohlc(pair, 1440, asset_class=asset_class)
+        db.upsert_candles(pair, daily)
+        print(f"{pair} : {len(daily)} bougies d'un jour, dernière clôture {daily[-1]['close']} ({iso(daily[-1]['ts'])}).")
+
 
 if __name__ == "__main__":
     main()

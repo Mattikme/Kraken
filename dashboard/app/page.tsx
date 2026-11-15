@@ -2,7 +2,7 @@
 import Link from "next/link";
 import EquityChart from "./EquityChart";
 import { loadData, type Data, type Mode, type Result } from "@/lib/data";
-import { DASH, btc, day, eur, int, label, pct, signedEur, STRATEGY_ORDER, tone, when } from "@/lib/format";
+import { DASH, PARTIAL, asset, day, eur, int, label, pct, quantity, signedEur, STRATEGY_ORDER, tone, when } from "@/lib/format";
 
 export const dynamic = "force-dynamic"; // jamais de page figée : on relit Neon à chaque fois
 
@@ -86,7 +86,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
         <div className="hero-chips">
           <span className="chip">Capital {eur(current?.final_eur)}</span>
           <span className={`chip ${tone(current?.return_pct)}`}>{pct(current?.return_pct, true)}</span>
-          <span className={`chip ${tone(gap)}`}>vs buy &amp; hold {signedEur(gap)}</span>
+          <span className={`chip ${tone(gap)}`}>vs garder du bitcoin {signedEur(gap)}</span>
           {isPaper && <span className="chip">Position {current?.position ?? DASH}</span>}
           {isPaper && <span className="chip">Dernier signal {signal ? SIGNAL_LABELS[signal.signal] ?? signal.signal : DASH}</span>}
         </div>
@@ -98,7 +98,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
               <small>
                 {!current
                   ? DASH
-                  : strategy === "trend_ensemble"
+                  : PARTIAL.has(strategy)
                     ? "achats et ventes partiels"
                     : `${current.n_round_trips} aller(s)-retour(s) clôturé(s)`}
               </small>
@@ -108,7 +108,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
             <dt className="label">Taux de réussite</dt>
             <dd>
               {pct(current?.win_rate_pct)}
-              <small>{strategy === "trend_ensemble" ? "non mesuré (ordres partiels)" : "allers-retours gagnants"}</small>
+              <small>{PARTIAL.has(strategy) ? "non mesuré (ordres partiels)" : "allers-retours gagnants"}</small>
             </dd>
           </div>
           <div>
@@ -172,7 +172,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
 
       <section className="card" aria-label="Derniers ordres">
         <h2>Derniers ordres</h2>
-        <p className="sub">Toutes stratégies · prix d&apos;exécution, glissement de 0,05 % inclus</p>
+        <p className="sub">Toutes stratégies · prix en euros, glissement de 0,05 % inclus</p>
         {data.trades.length === 0 ? (
           <div className="empty">
             <div>
@@ -183,13 +183,15 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
         ) : (
           <ul className="trades">
             {data.trades.map((t) => (
-              <li key={`${t.strategy}-${t.ts}`}>
+              <li key={`${t.strategy}-${t.ts}-${t.pair}`}>
                 <span className={`side ${t.side}`}>{t.side === "buy" ? "ACHAT" : "VENTE"}</span>
-                <span className="what">{label(t.strategy)}</span>
+                <span className="what">
+                  {asset(t.pair)} <span className="for">· {label(t.strategy)}</span>
+                </span>
                 <span className="amount">{eur(t.price)}</span>
                 <small className="date">{when(t.ts)}</small>
                 <small className="fee">
-                  <span className="wide">{btc(t.qty)} · </span>frais {eur(t.fee)}
+                  <span className="wide">{quantity(t.qty, t.pair)} · </span>frais {eur(t.fee)}
                 </small>
               </li>
             ))}

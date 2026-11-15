@@ -52,14 +52,30 @@ export function tone(v: number | null | undefined): string {
 }
 
 export const STRATEGY_LABELS: Record<string, string> = {
+  tendance_risque: "Portefeuille actions · or · bitcoin",
   trend_ensemble: "Ensemble de tendances",
   sma_cross_daily_20_50: "Moyennes 20/50 · 1 jour",
   sma_cross_20_50: "Moyennes 20/50 · 1 h",
   momentum_24h: "Momentum 24 h",
-  buy_and_hold: "Buy & hold",
+  buy_and_hold: "Garder du bitcoin",
 };
 
-export const STRATEGY_ORDER = ["trend_ensemble", "sma_cross_daily_20_50", "sma_cross_20_50", "momentum_24h"];
+export const STRATEGY_ORDER = ["tendance_risque", "trend_ensemble", "sma_cross_daily_20_50", "sma_cross_20_50", "momentum_24h"];
+
+/** Stratégies qui achètent et vendent par parts (pas d'aller-retour complet à compter). */
+export const PARTIAL = new Set(["tendance_risque", "trend_ensemble"]);
+
+const ASSET_LABELS: Record<string, string> = { XBTEUR: "Bitcoin", SPYxUSD: "Actions S&P 500", GLDxUSD: "Or" };
+
+export function asset(pair: string | null | undefined): string {
+  return pair ? (ASSET_LABELS[pair] ?? pair) : DASH;
+}
+
+/** Quantité échangée, avec l'unité de l'actif. */
+export function quantity(v: number | null | undefined, pair: string | null | undefined): string {
+  if (!isNumber(v)) return DASH;
+  return pair === "XBTEUR" ? btc(v) : `${v.toFixed(4).replace(".", ",")} part(s)`;
+}
 
 export function label(strategy: string): string {
   return STRATEGY_LABELS[strategy] ?? strategy;

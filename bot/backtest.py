@@ -83,8 +83,10 @@ def count_gaps(candles):
 def save(results, fee_name, period_days, start_ts, end_ts, store_details):
     """Écrit les résultats dans Neon (remplace ceux du backtest précédent)."""
     now = datetime.now(timezone.utc).isoformat()
-    statements = [("DELETE FROM backtest_results WHERE fee_model = $1 AND period_days = $2",
-                   [fee_name, period_days])]
+    names = json.dumps(list(results))            # on ne remplace que les stratégies de ce backtest
+    mine = "strategy IN (SELECT jsonb_array_elements_text($1::jsonb))"
+    statements = [(f"DELETE FROM backtest_results WHERE {mine} AND fee_model = $2 AND period_days = $3",
+                   [names, fee_name, period_days])]
     for name, res in results.items():
         s = res["stats"]
         statements.append((
@@ -97,8 +99,8 @@ def save(results, fee_name, period_days, start_ts, end_ts, store_details):
              s["final_eur"], s["return_pct"], s["n_trades"], s["n_round_trips"], s["win_rate_pct"],
              s["fees_eur"], s["max_drawdown_pct"], s["beats_buy_hold"], json.dumps(res["params"])]))
     if store_details:   # détail (trades + courbe) uniquement pour le scénario principal
-        statements.append(("DELETE FROM trades WHERE mode = 'backtest'", []))
-        statements.append(("DELETE FROM equity WHERE mode = 'backtest'", []))
+        statements.append((f"DELETE FROM trades WHERE {mine} AND mode = 'backtest'", [names]))
+        statements.append((f"DELETE FROM equity WHERE {mine} AND mode = 'backtest'", [names]))
         for name, res in results.items():
             trades = [dict(t) for t in res["trades"]]
             daily = [{"ts": ts, "v": v} for ts, v in res["curve"] if ts % 86400 == 0]

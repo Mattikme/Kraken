@@ -270,7 +270,9 @@ def test_multi_simulation_frais_et_repartition():
     targets = [{"ACTIONS": 0.5, "OR": 0.5}, None, None, None, None]
     curve, orders, paid = multi.simulate(days, prices, targets, 0, capital=1000.0)
     cost = multi.XSTOCK_FEE + config.SLIPPAGE
-    assert orders == 2 and paid == pytest.approx(1000 * cost)
+    assert [(o["asset"], o["side"], o["day"]) for o in orders] == [("ACTIONS", "buy", 1), ("OR", "buy", 1)]
+    assert paid == pytest.approx(1000 * cost) == pytest.approx(sum(o["fee"] for o in orders))
+    assert multi.trade_rows(orders)[0]["pair"] == "SPYxUSD" and multi.trade_rows(orders)[0]["ts"] == 2 * 86400
     assert curve[1][1] == pytest.approx(1000 * (1 - cost))        # jour 1 : achat, frais payés
     assert curve[-1][1] == pytest.approx(500 * (1 - cost) * 3)    # l'or double : 500 + 1000 (net de frais)
     # Décision prise au jour 0, exécutée au jour 1 : le jour 0 reste en EUR.
@@ -302,3 +304,10 @@ def test_multi_parts_selon_le_risque():
     assert held and all(0 < w < 1 for w in held.values())
     if len(held) == 2:
         assert held["ACTIONS"] > 3 * held["BTC"]                  # l'actif calme pèse bien plus
+
+
+def test_multi_paper_libelle_de_position():
+    from bot import multi_paper
+    label = multi_paper.position_label(1000.0, {"ACTIONS": 4.5, "OR": 8.0}, {"ACTIONS": 100.0, "OR": 50.0, "BTC": 1.0})
+    assert label == "Actions 45 % · Or 40 % · EUR 15 %"
+    assert multi_paper.position_label(1000.0, {}, {"ACTIONS": 1.0, "OR": 1.0, "BTC": 1.0}) == "EUR 100 %"

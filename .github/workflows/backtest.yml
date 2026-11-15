@@ -25,3 +25,5 @@ jobs:
         run: python -m bot.history
       - name: Backtest
         run: python -m bot.backtest
+      - name: Backtest du portefeuille multi-actifs
+        run: python -m bot.multi --save

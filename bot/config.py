@@ -48,6 +48,17 @@ DAILY_SMA_SLOW = 50      # jours
 # Part de BTC = proportion de ces moyennes journalières que le cours dépasse.
 ENSEMBLE_SMA_DAYS = (20, 50, 100, 200)
 
+# Portefeuille multi-actifs (stratégie E, retenue après la recherche multi-actifs) :
+# actions américaines et or via les ETF tokenisés de Kraken, bitcoin, le reste en EUR.
+# Nom affiché -> (paire Kraken, classe d'actif pour l'API). Bougies d'un jour.
+DAILY_PAIRS = {
+    "SPYxUSD": "tokenized_asset",    # S&P 500
+    "GLDxUSD": "tokenized_asset",    # or
+    "EURUSD": None,                  # pour convertir les cours en EUR
+}
+# Simulation du portefeuille : départ à la clôture de ce jour (UTC), 1 000 EUR fictifs.
+MULTI_START = (2026, 11, 14)
+
 # Backtest : période jugée (2 ans) et période de contrôle plus longue (10 ans),
 # qui couvre plusieurs marchés haussiers et baissiers.
 BACKTEST_DAYS = 730

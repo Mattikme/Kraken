@@ -110,7 +110,8 @@ def build_statements(results, candles, start_ts, done, now_iso):
     return statements
 
 
-def main():
+def run_btc():
+    """Simulation des stratégies BTC/EUR (bougies 1 h)."""
     db.init_schema()
     start_ts = config.PAPER_START_TS
     iso = lambda ts: datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -135,6 +136,12 @@ def main():
         s = res["stats"]
         print(f"  {name:<23}{s['final_eur']:>10.2f} EUR  {s['n_trades']:>3} ordre(s)  "
               f"dernier cours : {candles[-1]['close']:.1f}")
+
+
+def main():
+    run_btc()
+    from . import multi_paper          # portefeuille multi-actifs (bougies d'un jour)
+    multi_paper.main()
 
 
 if __name__ == "__main__":

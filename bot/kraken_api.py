@@ -56,11 +56,14 @@ def parse_ohlc(result, drop_last=True):
     ]
 
 
-def fetch_ohlc(pair, interval_min, since=None):
-    """Bougies terminées les plus récentes (Kraken en renvoie 720 au maximum)."""
+def fetch_ohlc(pair, interval_min, since=None, asset_class=None):
+    """Bougies terminées les plus récentes (Kraken en renvoie 720 au maximum).
+    Pour un ETF tokenisé (SPYx, GLDx...), passer asset_class="tokenized_asset"."""
     params = {"pair": pair, "interval": interval_min}
     if since is not None:
         params["since"] = since
+    if asset_class is not None:
+        params["asset_class"] = asset_class
     return parse_ohlc(_get("OHLC", params))
 
 

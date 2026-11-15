@@ -22,7 +22,7 @@ export type Result = {
 };
 
 export type Point = { ts: number; v: number };
-export type Trade = { strategy: string; ts: number; side: string; price: number; qty: number; fee: number };
+export type Trade = { strategy: string; ts: number; side: string; price: number; qty: number; fee: number; pair: string };
 export type Candle = { ts: number; close: number };
 export type Signal = { strategy: string; ts: number; signal: string };
 
@@ -62,8 +62,8 @@ export async function loadData(mode: Mode, strategies: string[]): Promise<Data> 
     ),
     sql.query(
       `SELECT strategy, extract(epoch FROM ts)::float8 AS ts, side, price::float8 AS price,
-              qty::float8 AS qty, fee::float8 AS fee
-       FROM trades WHERE mode = $1 ORDER BY ts DESC, strategy LIMIT 12`,
+              qty::float8 AS qty, fee::float8 AS fee, pair
+       FROM trades WHERE mode = $1 ORDER BY ts DESC, strategy, pair LIMIT 12`,
       [mode],
     ),
     sql.query(
