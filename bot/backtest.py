@@ -36,6 +36,10 @@ def simulate(candles, target, start_index, fee_model, capital=config.START_CAPIT
             pf.buy(candle["ts"], candle["open"])
         elif wanted is False and pf.btc > 0:
             pf.sell(candle["ts"], candle["open"])
+        elif isinstance(wanted, float):          # cible partielle : part de BTC entre 0 et 1
+            current = pf.btc * candle["open"] / pf.value(candle["open"])
+            if abs(wanted - current) > config.REBALANCE_BAND:
+                pf.rebalance(candle["ts"], candle["open"], wanted)
         curve.append((candle["ts"] + HOUR, pf.value(candle["close"])))   # valeur à la clôture
     return pf, curve
 

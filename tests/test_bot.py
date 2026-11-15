@@ -179,3 +179,54 @@ def test_simulation_rejouable_sans_doublon():
     assert all(len(rows) == 1 and rows[0]["ts"] == done_ts + 3600 for rows in equity)
     assert all("ON CONFLICT" in sql for sql, _ in statements)    # aucune écriture en double
     assert sum("INSERT INTO signals" in sql for sql, _ in statements) == 3   # pas pour le buy & hold
+
+
+# ---------- recherche : exposition partielle et stratégies candidates ----------
+
+def test_reequilibrage_partiel_respecte_frais_et_cible():
+    pf = Portfolio(1000.0, FlatFee(0.01), slippage=0.0)
+    pf.rebalance(0, 100.0, 0.5)                                   # viser 50 % de BTC
+    assert pf.btc * 100.0 == pytest.approx(500.0)
+    assert pf.cash == pytest.approx(1000 - 500 - 5)               # 5 EUR de frais
+    pf.rebalance(1, 100.0, 0.0)                                   # tout revendre
+    assert pf.btc == 0 and pf.cash == pytest.approx(495 + 500 * 0.99)
+    pf.rebalance(2, 100.0, 1.0)                                   # tout investir, frais compris
+    assert pf.cash == pytest.approx(0.0, abs=1e-9)
+    assert pf.rebalance(3, 100.0, 1.0) is None                    # déjà investi : aucun ordre
+
+
+def test_simulation_partielle_ne_trade_que_hors_de_la_bande():
+    candles = _candles([(100, 100)] * 4 + [(104, 104), (200, 200), (200, 200)])
+    target = [None] + [0.5] * 6
+    pf, _ = backtest.simulate(candles, target, 1, FlatFee(0.0), capital=1000.0)
+    # Achat initial à l'heure 2 ; +4 % ne déclenche rien ; le doublement (BTC = 67 %) déclenche une vente.
+    assert [(t["ts"], t["side"]) for t in pf.trades] == [(2 * 3600, "buy"), (5 * 3600, "sell")]
+    assert pf.btc * 200.0 / pf.value(200.0) == pytest.approx(0.5, abs=0.001)
+
+
+def test_les_candidates_ne_regardent_jamais_le_futur():
+    from bot import research
+    closes = [100 * (1 + 0.3 * ((d * 37 % 23) / 23 - 0.5) + 0.002 * d) for d in range(330)]
+    candles = _hourly(closes)
+    for name, fn in research.CANDIDATES.items():
+        full = fn(candles)
+        for cut in (24 * 250 + 7, 24 * 300, len(candles) - 1):
+            assert fn(candles[:cut + 1])[cut] == full[cut], name
+        assert all(v is None or v is True or v is False or 0.0 <= v <= 1.0 for v in full), name
+
+
+def test_regles_candidates_sur_des_cas_simples():
+    from bot import research
+    rising = [100.0 + d for d in range(260)]
+    days = list(range(260))
+    assert research.trend_sma200(days, rising)[-1] is True
+    assert research.trend_sma200(days, rising[::-1])[-1] is False
+    assert research.trend_ensemble(days, rising)[-1] == 1.0
+    assert research.trend_ensemble(days, rising[::-1])[-1] == 0.0
+    assert research.weekday(0) == 3 and research.weekday(3) == 6          # 1970-01-01 = jeudi
+    weekly = research.tsmom_4w(days, rising)
+    assert weekly[27] is None and weekly[31] is True                      # 1re décision un dimanche
+    calm = [100.0 * (1.001 ** d) for d in range(60)]
+    assert research.vol_target(days[:60], calm)[-1] == 1.0                # marché calme : 100 %
+    wild = [100.0 * (1.2 if d % 2 else 1.0) for d in range(60)]
+    assert research.vol_target(days[:60], wild)[-1] < 0.2                 # marché agité : peu de BTC

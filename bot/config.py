@@ -49,7 +49,12 @@ DAILY_SMA_SLOW = 50      # jours
 BACKTEST_DAYS = 730
 ROBUSTNESS_DAYS = 3650
 WARMUP_DAYS = 70         # historique nécessaire avant le départ (moyenne 50 jours)
-HISTORY_DAYS = ROBUSTNESS_DAYS + WARMUP_DAYS + 10
+RESEARCH_WARMUP_DAYS = 220   # les stratégies de recherche utilisent une moyenne 200 jours
+HISTORY_DAYS = ROBUSTNESS_DAYS + RESEARCH_WARMUP_DAYS + 10
+
+# Stratégies à exposition partielle : on ne rééquilibre que si la part de BTC
+# s'écarte de plus de 10 points de la cible (évite de payer des frais pour rien).
+REBALANCE_BAND = 0.10
 
 # Simulation en direct (argent fictif) : première bougie prise en compte.
 # Date fixée à l'avance ; ne pas la modifier une fois la simulation lancée.

@@ -83,6 +83,29 @@ class Portfolio:
         self.round_trips.append(self.cash - self._entry_cost)
         return self._log(ts, "sell", fill, qty, fee, notional)
 
+    def rebalance(self, ts, price, weight):
+        """Ramène la part de BTC à `weight` (entre 0 et 1) de la valeur du portefeuille."""
+        delta = weight * self.value(price) - self.btc * price   # EUR de BTC à acheter (+) ou vendre (-)
+        rate = self.fee_model.rate(ts)
+        if delta > 0:
+            fill = price * (1 + self.slippage)
+            notional = min(delta, self.cash / (1 + rate))
+            if notional <= 0:
+                return None
+            fee = notional * rate
+            self.cash = max(0.0, self.cash - notional - fee)
+            self.btc += notional / fill
+            return self._log(ts, "buy", fill, notional / fill, fee, notional)
+        if delta < 0 and self.btc > 0:
+            fill = price * (1 - self.slippage)
+            qty = min(self.btc, -delta / price)
+            notional = qty * fill
+            fee = notional * rate
+            self.btc -= qty
+            self.cash += notional - fee
+            return self._log(ts, "sell", fill, qty, fee, notional)
+        return None
+
     def _log(self, ts, side, price, qty, fee, notional):
         self.fee_model.record(ts, notional)
         trade = {"ts": ts, "side": side, "price": price, "qty": qty, "fee": fee}

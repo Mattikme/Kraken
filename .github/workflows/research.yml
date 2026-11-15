@@ -1,0 +1,27 @@
+# Recherche : teste les stratégies candidates sur 10 ans (lecture seule de Neon).
+# Lancement manuel (onglet Actions > research > Run workflow).
+name: research
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Historique (10 ans + marge pour la moyenne 200 jours)
+        run: python -m bot.history
+      - name: Test des stratégies candidates
+        run: python -m bot.research

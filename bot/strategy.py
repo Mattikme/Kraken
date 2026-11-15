@@ -41,24 +41,36 @@ def momentum(closes, hours=config.MOMENTUM_HOURS,
     return target
 
 
-def daily_sma_cross(candles, fast=config.DAILY_SMA_FAST, slow=config.DAILY_SMA_SLOW):
-    """Stratégie C : croisement de moyennes mobiles sur des bougies d'un jour (UTC).
+def daily_closes(candles):
+    """Regroupe les bougies 1 h par jour UTC.
 
-    Les bougies 1 h sont regroupées par jour. La décision d'un jour n'est
-    utilisée qu'à partir du jour SUIVANT (quand sa clôture est définitive) :
-    l'ordre part donc peu après minuit UTC, au plus une fois par jour.
+    Renvoie (numéros de jour, clôture de chaque jour, indice du jour de chaque bougie).
     """
-    day_closes, day_of, current = [], [], None
+    days, closes, day_of = [], [], []
     for c in candles:
         day = c["ts"] // 86400
-        if day != current:
-            day_closes.append(c["close"])
-            current = day
+        if not days or day != days[-1]:
+            days.append(day)
+            closes.append(c["close"])
         else:
-            day_closes[-1] = c["close"]          # dernière clôture connue du jour
-        day_of.append(len(day_closes) - 1)
-    daily = sma_cross(day_closes, fast, slow)
+            closes[-1] = c["close"]              # dernière clôture connue du jour
+        day_of.append(len(days) - 1)
+    return days, closes, day_of
+
+
+def to_hourly(daily, day_of):
+    """Applique une décision journalière aux bougies 1 h.
+
+    La décision d'un jour n'est utilisée qu'à partir du jour SUIVANT (quand sa
+    clôture est définitive) : l'ordre part peu après minuit UTC.
+    """
     return [daily[d - 1] if d > 0 else None for d in day_of]
+
+
+def daily_sma_cross(candles, fast=config.DAILY_SMA_FAST, slow=config.DAILY_SMA_SLOW):
+    """Stratégie C : croisement de moyennes mobiles sur des bougies d'un jour (UTC)."""
+    _, closes, day_of = daily_closes(candles)
+    return to_hourly(sma_cross(closes, fast, slow), day_of)
 
 
 def buy_and_hold(closes):
