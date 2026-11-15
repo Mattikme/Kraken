@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from . import backtest, config, db
 from .portfolio import TieredFee
+from .strategy import STRATEGIES
 
 HOUR = 3600
 
@@ -59,14 +60,16 @@ def position_label(weight):
     return "EUR" if percent <= 0 else "BTC" if percent >= 100 else f"{percent} % BTC"
 
 
-def build_statements(results, candles, start_ts, done_ts, now_iso):
-    """Requêtes d'écriture : seules les lignes plus récentes que `done_ts` sont envoyées."""
+def build_statements(results, candles, start_ts, done, now_iso):
+    """Requêtes d'écriture. `done` donne, par stratégie, la dernière clôture déjà
+    enregistrée : seules les lignes plus récentes sont envoyées."""
     start_index = max(1, next(i for i, c in enumerate(candles) if c["ts"] >= start_ts))
     end_ts = candles[-1]["ts"] + HOUR
     statements = []
     for name, res in results.items():
         s = res["stats"]
         weights = weights_at_close(candles, start_index, res["trades"], res["curve"])
+        done_ts = done.get(name, 0)
         statements.append((
             """INSERT INTO paper_results (strategy, run_at, start_ts, end_ts, start_eur, final_eur,
                  return_pct, n_trades, n_round_trips, win_rate_pct, fees_eur, max_drawdown_pct,
@@ -115,16 +118,17 @@ def main():
     if last is None or last < start_ts:
         print(f"La simulation démarre avec la bougie de {iso(start_ts)} : pas encore terminée.")
         return
-    row = db.query("SELECT extract(epoch FROM max(ts))::bigint AS done FROM equity WHERE mode = 'paper'")[0]
-    done_ts = int(row["done"]) if row["done"] is not None else 0
-    if done_ts >= last + HOUR:
-        print(f"Rien de nouveau depuis la clôture de {iso(done_ts)}.")
+    rows = db.query("""SELECT strategy, extract(epoch FROM max(ts))::bigint AS done
+                       FROM equity WHERE mode = 'paper' GROUP BY strategy""")
+    done = {r["strategy"]: int(r["done"]) for r in rows}
+    if all(done.get(name, 0) >= last + HOUR for name in STRATEGIES):
+        print(f"Rien de nouveau depuis la clôture de {iso(last + HOUR)}.")
         return
 
     candles = db.load_candles(config.PAIR, start_ts - config.WARMUP_DAYS * 86400, last + 1)
     results = backtest.run(candles, TieredFee, start_ts)
     now_iso = datetime.now(timezone.utc).isoformat()
-    db.transaction(build_statements(results, candles, start_ts, done_ts, now_iso))
+    db.transaction(build_statements(results, candles, start_ts, done, now_iso))
 
     print(f"Simulation du {iso(start_ts)} à la clôture de {iso(last + HOUR)} :")
     for name, res in results.items():

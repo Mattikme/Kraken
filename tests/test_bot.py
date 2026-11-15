@@ -173,10 +173,13 @@ def test_simulation_rejouable_sans_doublon():
     start_ts = 60 * 3600
     results = backtest.run(candles, lambda: FlatFee(0.008), start_ts)
     done_ts = candles[-1]["ts"]                                   # tout sauf la dernière clôture
-    statements = paper_trader.build_statements(results, candles, start_ts, done_ts, "2026-01-01")
+    done = {name: done_ts for name in results if name != "trend_ensemble"}   # stratégie ajoutée après coup
+    statements = paper_trader.build_statements(results, candles, start_ts, done, "2026-01-01")
     import json
-    equity = [json.loads(p[1]) for sql, p in statements if "INSERT INTO equity" in sql]
-    assert all(len(rows) == 1 and rows[0]["ts"] == done_ts + 3600 for rows in equity)
+    equity = {p[0]: json.loads(p[1]) for sql, p in statements if "INSERT INTO equity" in sql}
+    new = equity.pop("trend_ensemble")
+    assert all(len(rows) == 1 and rows[0]["ts"] == done_ts + 3600 for rows in equity.values())
+    assert new[0]["ts"] == start_ts and len(new) == len(results["trend_ensemble"]["curve"])   # tout son historique
     assert all("ON CONFLICT" in sql for sql, _ in statements)    # aucune écriture en double
     assert sum("INSERT INTO signals" in sql for sql, _ in statements) == 4   # pas pour le buy & hold
 
