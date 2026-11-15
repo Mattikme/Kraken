@@ -27,7 +27,7 @@ function formatDate(ts: number, spanSeconds: number): string {
       ? { month: "short", year: "2-digit" }
       : spanSeconds > 3 * 86400
         ? { day: "numeric", month: "short" }
-        : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+        : { hour: "2-digit", minute: "2-digit" }; // période courte : l'heure suffit (la date est au-dessus)
   return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: "UTC" }).format(new Date(ts * 1000));
 }
 

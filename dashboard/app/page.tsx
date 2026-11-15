@@ -95,14 +95,20 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
             <dt className="label">Ordres</dt>
             <dd>
               {int(current?.n_trades)}
-              <small>{current ? `${current.n_round_trips} aller(s)-retour(s) clôturé(s)` : DASH}</small>
+              <small>
+                {!current
+                  ? DASH
+                  : strategy === "trend_ensemble"
+                    ? "achats et ventes partiels"
+                    : `${current.n_round_trips} aller(s)-retour(s) clôturé(s)`}
+              </small>
             </dd>
           </div>
           <div>
             <dt className="label">Taux de réussite</dt>
             <dd>
               {pct(current?.win_rate_pct)}
-              <small>allers-retours gagnants</small>
+              <small>{strategy === "trend_ensemble" ? "non mesuré (ordres partiels)" : "allers-retours gagnants"}</small>
             </dd>
           </div>
           <div>
