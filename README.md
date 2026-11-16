@@ -3,7 +3,37 @@
 Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 (acheter et garder) après frais. Aucun argent réel, aucune clé API à ce stade.
 
-## Fonctionnement
+## Démarrage rapide : le bot sur ton ordinateur
+
+Aucune clé API, aucune base de données, aucun compte : il faut seulement Python 3.10+.
+
+| Système | Commande |
+|---|---|
+| Windows | double-clic sur `lancer.bat` |
+| macOS / Linux | `./lancer.sh` |
+| À la main | `pip install -r requirements.txt` puis `python -m bot run` |
+
+Le bot tourne seul : toutes les 15 min il récupère les cours Kraken, rejoue les
+stratégies sur **1 000 € fictifs** et met à jour `donnees/rapport.html` (à ouvrir
+dans un navigateur, il se recharge tout seul). Ctrl+C l'arrête ; relancé plus
+tard, il reprend et rattrape la période manquée.
+
+| Commande | Effet |
+|---|---|
+| `python -m bot run [--minutes 15]` | tourne en continu |
+| `python -m bot once` | un seul passage |
+| `python -m bot status` | dernier état, sans réseau |
+| `python -m bot backtest` | backtest rapide (≈ 520 jours, données Kraken) |
+
+Fichiers produits dans `donnees/` : `rapport.html`, `ordres.csv` (tous les ordres
+simulés), `etat.json`, `bot.log`, `bot.sqlite` (bougies). Supprimer ce dossier
+remet la simulation à zéro.
+
+**Stratégie principale** : le portefeuille actions + or + bitcoin (`tendance_risque`,
+détaillé plus bas), revu en fin de mois. Les stratégies bitcoin tournent à côté,
+chacune avec ses 1 000 € fictifs, pour comparaison. Départ fixé au premier lancement.
+
+## Fonctionnement (version cloud : GitHub Actions + Neon + Vercel)
 
 | Élément | Rôle | Où |
 |---|---|---|
@@ -13,6 +43,7 @@ Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
 | `bot/research.py` | test de six stratégies candidates sur 10 ans (lecture seule) | GitHub Actions `research` |
 | `bot/multi.py` | test de portefeuilles actions + or + bitcoin | GitHub Actions `research` et `backtest` |
 | `bot/multi_paper.py` | simulation en direct du portefeuille retenu (cours Kraken) | GitHub Actions `collector` |
+| `bot/local.py`, `bot/__main__.py` | bot autonome local (SQLite, rapport HTML) | ton ordinateur |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
 | `bot/paper_trader.py` | simulation en direct sur 1 000 € fictifs, après chaque collecte | GitHub Actions `collector` |
