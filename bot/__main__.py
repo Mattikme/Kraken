@@ -1,9 +1,9 @@
 """Point d'entrée : python -m bot <commande>
 
-  run       tourne en continu (passage toutes les 15 min par défaut)
-  once      un seul passage : collecte, simulation, rapport
-  status    affiche le dernier état enregistré (sans réseau)
-  backtest  backtest rapide des stratégies journalières sur données Kraken
+  run         tourne en continu (passage toutes les 15 min par défaut)
+  once        un seul passage : collecte, tournoi, rapport
+  status      affiche le dernier classement enregistré (sans réseau)
+  historique  tournoi sur 2016 -> aujourd'hui (cours longs, Yahoo Finance)
 """
 import argparse
 import json
@@ -12,13 +12,14 @@ from . import local
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="python -m bot", description="Bot de trading Kraken en simulation (1 000 € fictifs).")
+    parser = argparse.ArgumentParser(prog="python -m bot",
+                                     description="Tournoi de bots de trading Kraken en simulation (1 000 € fictifs chacun).")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="tourne en continu")
     run.add_argument("--minutes", type=float, default=15, help="intervalle entre deux passages (défaut 15)")
     sub.add_parser("once", help="un seul passage")
-    sub.add_parser("status", help="dernier état enregistré")
-    sub.add_parser("backtest", help="backtest rapide sur données Kraken journalières")
+    sub.add_parser("status", help="dernier classement enregistré")
+    sub.add_parser("historique", help="tournoi sur 10 ans (cours longs)")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -34,13 +35,16 @@ def main():
         if not path.exists():
             raise SystemExit("Aucun état : lance d'abord « python -m bot once » ou « python -m bot run ».")
         state = json.loads(path.read_text())
-        print(f"Mis à jour : {state['updated_at']} · BTC/EUR {state['btc_price']:.1f}")
-        for r in state["strategies"]:
-            print(f"{r['label']:<48}{r['value']:>9.2f} €{r['return']:>+9.2f}%  {r['orders']:>3} ordre(s)  {r['position']}")
+        print(f"Mis à jour {state['updated_at']} · lancement {state['start']}")
+        for rank, r in enumerate(state["classement"], 1):
+            live = r["depuis_lancement"]
+            status = "CANDIDAT AU RÉEL" if r["candidat_reel"] else "en test"
+            print(f"{rank:<3}{r['libelle']:<40}{live['final']:>9.2f} €{live['return_pct']:>+8.2f}%  {status} · {r['position']}")
     else:
         store = local.open_store()
-        local.collect(store)
-        local.quick_backtest(store)
+        local.download_history(store)
+        local.print_history(local.run_history(store))
+        print(f"\nRésultat enregistré : {local.DATA_DIR / 'historique.json'} (affiché dans le rapport)")
 
 
 if __name__ == "__main__":

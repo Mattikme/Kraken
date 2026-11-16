@@ -1,11 +1,12 @@
-# Bot de trading BTC/EUR sur Kraken — simulation d'abord
+# Tournoi de bots de trading sur Kraken (crypto, ETF, devises) : simulation d'abord
 
-Objectif : mesurer honnêtement si une stratégie simple bat le « buy & hold »
-(acheter et garder) après frais. Aucun argent réel, aucune clé API à ce stade.
+Objectif : faire s'affronter plusieurs bots sur **1 000 € fictifs chacun**, mesurer
+honnêtement lequel gagne après frais, puis faire passer au réel uniquement celui
+qui a fait ses preuves. Aucun argent réel, aucune clé API à ce stade.
 
-## Démarrage rapide : le bot sur ton ordinateur
+## Démarrage rapide (ton ordinateur)
 
-Aucune clé API, aucune base de données, aucun compte : il faut seulement Python 3.10+.
+Il faut seulement Python 3.10+. Aucune clé API, aucune base de données, aucun compte.
 
 | Système | Commande |
 |---|---|
@@ -13,25 +14,96 @@ Aucune clé API, aucune base de données, aucun compte : il faut seulement Pytho
 | macOS / Linux | `./lancer.sh` |
 | À la main | `pip install -r requirements.txt` puis `python -m bot run` |
 
-Le bot tourne seul : toutes les 15 min il récupère les cours Kraken, rejoue les
-stratégies sur **1 000 € fictifs** et met à jour `donnees/rapport.html` (à ouvrir
-dans un navigateur, il se recharge tout seul). Ctrl+C l'arrête ; relancé plus
-tard, il reprend et rattrape la période manquée.
+Le bot tourne seul : toutes les 15 min il récupère les cours Kraken, rejoue tous
+les bots et met à jour `donnees/rapport.html`, une page à ouvrir dans le navigateur
+qui se recharge seule. Ctrl+C l'arrête ; relancé plus tard, il reprend et rattrape
+la période manquée. Au premier lancement, il calcule aussi le tournoi sur 10 ans.
 
 | Commande | Effet |
 |---|---|
 | `python -m bot run [--minutes 15]` | tourne en continu |
 | `python -m bot once` | un seul passage |
-| `python -m bot status` | dernier état, sans réseau |
-| `python -m bot backtest` | backtest rapide (≈ 520 jours, données Kraken) |
+| `python -m bot status` | dernier classement, sans réseau |
+| `python -m bot historique` | tournoi 2016 → aujourd'hui (cours longs) |
 
 Fichiers produits dans `donnees/` : `rapport.html`, `ordres.csv` (tous les ordres
-simulés), `etat.json`, `bot.log`, `bot.sqlite` (bougies). Supprimer ce dossier
-remet la simulation à zéro.
+simulés depuis le lancement), `etat.json`, `historique.json`, `bot.log`,
+`bot.sqlite`. Supprimer ce dossier remet le tournoi à zéro.
 
-**Stratégie principale** : le portefeuille actions + or + bitcoin (`tendance_risque`,
-détaillé plus bas), revu en fin de mois. Les stratégies bitcoin tournent à côté,
-chacune avec ses 1 000 € fictifs, pour comparaison. Départ fixé au premier lancement.
+## L'univers (`bot/universe.py`)
+
+Actifs tradables au comptant sur Kraken depuis des EUR **et liquides** (échangés
+presque tous les jours, plus de 50 000 $ par jour) : un cours sans échange n'est
+pas un prix auquel on peut acheter. Sur les 177 ETF et actions tokenisés de
+Kraken, seuls trois passent ce filtre (relevé du 2026-11-16).
+
+| Catégorie | Actifs | Frais preneur Kraken (+ glissement 0,05 %) |
+|---|---|---|
+| Crypto | Bitcoin, Ether, Solana | 0,80 %, dégressif avec le volume |
+| ETF tokenisés | S&P 500 (SPYx), Nasdaq 100 (QQQx), or (GLDx) | 0,08 % + 0,20 % de conversion EUR→USD |
+| Devises | USD, GBP, JPY, CHF, AUD, CAD (face à l'euro) | 0,20 % |
+
+## Les bots (`bot/bots.py`)
+
+Liste et paramètres fixés avant le premier test, d'après des règles publiées.
+Décision avec les clôtures du jour, exécution à la clôture du lendemain.
+
+| Bot | Règle |
+|---|---|
+| Tout un peu (référence) | 1/3 crypto, 1/3 ETF, 1/3 devises, rééquilibré chaque mois |
+| Tendance | garde chaque actif au-dessus de sa moyenne 10 mois (Faber) |
+| Tendance × risque | idem, parts inversement proportionnelles à la volatilité |
+| Momentum top 3 | les 3 actifs les plus forts sur 6 mois, s'ils montent |
+| Momentum crypto | chaque semaine, la crypto la plus forte sur 4 semaines |
+| Devises | les 2 devises les plus fortes face à l'euro sur 3 mois |
+| Rebond actions (RSI 2) | achète les creux du S&P 500 et du Nasdaq en tendance haussière (Connors) |
+| Cassure 55/20 jours | achète les nouveaux plus hauts, revend sous le plus bas 20 jours |
+| Bitcoin · ensemble de tendances | part de BTC selon 4 moyennes mobiles |
+| Actions + or + BTC | portefeuille retenu par la recherche multi-actifs |
+| **Sélectionneur** | méta-bot : chaque mois, copie les 3 bots les plus réguliers des 6 derniers mois |
+
+Le sélectionneur fait évoluer le tournoi : il suit automatiquement les bots qui
+gagnent et abandonne ceux qui perdent, en ne voyant que le passé.
+
+## Résultat du tournoi sur 10 ans
+
+`python -m bot historique`, le 2026-11-16. Cours longs des actifs d'origine
+(ETF SPY/QQQ/GLD, crypto en EUR, taux de change ; Yahoo Finance), 2016-01-01 →
+2026-11-13, 1 000 € chacun, frais Kraken inclus.
+
+| Bot | Capital final | Par an | Pire baisse | Sharpe | Ordres |
+|---|---|---|---|---|---|
+| Momentum crypto | 620 823 € | +80,7 % | 82,4 % | 1,14 | 217 |
+| Bitcoin · ensemble de tendances | 108 361 € | +53,9 % | 65,2 % | 1,18 | 756 |
+| Momentum top 3 | 85 671 € | +50,6 % | 60,7 % | 1,13 | 319 |
+| Sélectionneur | 45 345 € | +42,1 % | 34,5 % | 1,31 | 1 396 |
+| Tout un peu (référence) | 34 014 € | +38,3 % | 42,1 % | 1,35 | 219 |
+| Tendance | 16 290 € | +29,3 % | 26,3 % | 1,39 | 318 |
+| Cassure 55/20 jours | 8 251 € | +21,4 % | 21,3 % | 1,35 | 1 035 |
+| Actions + or + BTC | 5 016 € | +16,0 % | 13,6 % | 1,35 | 162 |
+| Tendance × risque | 1 254 € | +2,1 % | 5,2 % | 0,60 | 267 |
+| Rebond actions (RSI 2) | 858 € | −1,4 % | 21,1 % | −0,19 | 382 |
+| Devises | 666 € | −3,7 % | 37,4 % | −0,62 | 204 |
+
+À lire avec prudence :
+- les gros gains viennent presque tous de la crypto en 2017, 2020 et 2021 ;
+  sur 2025-2026, la plupart des bots perdent ;
+- **biais du survivant** : Solana et Ether ont été choisis en 2026, en sachant
+  qu'ils ont réussi ; un bot de 2016 aurait pu choisir des cryptos disparues
+  depuis. Les chiffres du momentum crypto sont donc surestimés ;
+- les bots de devises et de rebond actions ne couvrent pas leurs frais ;
+- un passé favorable ne garantit rien.
+
+## Du test au vrai bot
+
+1. **Simulation** (maintenant) : le tournoi tourne sur les cours Kraken en direct.
+2. **Promotion** : un bot devient « candidat au réel » dans le rapport s'il
+   remplit tous ces critères, fixés à l'avance :
+   au moins 90 jours de simulation, un gain supérieur à « Tout un peu », une pire baisse
+   inférieure à 15 % depuis le lancement et à 40 % sur 10 ans.
+3. **Réel, petit montant** : seul un candidat sera branché sur Kraken (clé API
+   sans droit de retrait, plafond par ordre, arrêt automatique en cas de perte),
+   d'abord avec quelques dizaines d'euros, en parallèle de sa simulation.
 
 ## Fonctionnement (version cloud : GitHub Actions + Neon + Vercel)
 
@@ -43,7 +115,7 @@ chacune avec ses 1 000 € fictifs, pour comparaison. Départ fixé au premier l
 | `bot/research.py` | test de six stratégies candidates sur 10 ans (lecture seule) | GitHub Actions `research` |
 | `bot/multi.py` | test de portefeuilles actions + or + bitcoin | GitHub Actions `research` et `backtest` |
 | `bot/multi_paper.py` | simulation en direct du portefeuille retenu (cours Kraken) | GitHub Actions `collector` |
-| `bot/local.py`, `bot/__main__.py` | bot autonome local (SQLite, rapport HTML) | ton ordinateur |
+| `bot/local.py`, `bot/__main__.py`, `bot/arena.py`, `bot/bots.py`, `bot/universe.py` | tournoi local (SQLite, rapport HTML) | ton ordinateur |
 | `bot/portfolio.py` | portefeuille fictif : frais preneur Kraken + glissement 0,05 % | — |
 | `bot/backtest.py` | rejoue les stratégies, écrit les résultats dans Neon | GitHub Actions `backtest` |
 | `bot/paper_trader.py` | simulation en direct sur 1 000 € fictifs, après chaque collecte | GitHub Actions `collector` |
